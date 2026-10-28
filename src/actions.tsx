@@ -373,7 +373,9 @@ export function createActions(ctx: SetupContext<typeof definition>) {
       return true
     }
     const context = await attempt(() => contextOf({ repo: issue.repo, number: issue.number }))
-    await launch({ directory, title, prompt: context ? withContext(ctx.t("agent.prompt.start", { number: issue.number, title: issue.title }), context) : undefined })
+    // Without the context the instruction still goes out: it tells the agent to read the issue itself.
+    const instruction = ctx.t("agent.prompt.start", { number: issue.number, title: issue.title })
+    await launch({ directory, title, prompt: context ? withContext(instruction, context) : instruction })
     return true
   }
 
@@ -446,10 +448,12 @@ export function createActions(ctx: SetupContext<typeof definition>) {
     linkIssue(issue.repo, name, issue.number)
     if (input.agent === "none") return true
     const context = await attempt(() => contextOf({ repo: issue.repo, number: issue.number }))
-    if (!context) return true
     const prompt = ctx.t("agent.prompt.start", { number: issue.number, title: issue.title })
-    if (input.agent === "session") await startSession(context, prompt, ctx.t("session.title.issue", { number: issue.number, title: issue.title }))
-    if (input.agent === "chat") attach(context, prompt)
+    const title = ctx.t("session.title.issue", { number: issue.number, title: issue.title })
+    if (input.agent === "session" && context) await startSession(context, prompt, title)
+    // Without the context the instruction still goes out: it tells the agent to read the issue itself.
+    if (input.agent === "session" && !context) await launch({ directory: cwd, title, prompt })
+    if (input.agent === "chat" && context) attach(context, prompt)
     return true
   }
 
