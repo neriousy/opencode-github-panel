@@ -1,0 +1,101 @@
+import { getOwner, onCleanup } from "solid-js"
+import { createKeyed, type Context, type IpcCallOptions, type IpcClient, type ServerRef } from "@opencode/plugin/gui"
+import { Git } from "./contract"
+import { GitRpc } from "./rpc"
+import { events, methods } from "./schemas"
+
+export type GitClient = IpcClient<(typeof Git)["spec"]>
+
+// How long a server without the server part stays on the fallback before it is asked again, so installing the plugin
+// there takes effect without reloading the app.
+const RETRY = 60_000
+
+/**
+ * Calls the backend where the routed session's repository lives: the server part over RPC on the session's server,
+ * remote servers included. When that server has no server part and runs on this machine, it falls back to this app's
+ * main process. Views use it like the Ipc client, so they never pick a transport.
+ */
+export function createTransport(ctx: Context): GitClient {
+  const local = ctx.main(Git)
+  const missing = new Map<string, number>()
+  const listeners = new Map<string, Set<(data: never) => void>>()
+
+  const target = () => {
+    const session = ctx.sessions.current()
+    const server = session?.server ?? ctx.servers.get("sidecar")
+    return { server, directory: session?.directory }
+  }
+
+  const call = async (name: keyof typeof methods, input: unknown, options?: IpcCallOptions) => {
+    const { server, directory } = target()
+    const skip = server ? (missing.get(server.id) ?? 0) > Date.now() : true
+    if (server && !skip) {
+      try {
+        // SAFETY: GitRpc is built from `methods`, so it has every method name with these inputs.
+        const rpc = server.client.rpc(GitRpc) as unknown as Record<string, (input: unknown, options: object) => Promise<unknown>>
+        const method = rpc[name]
+        if (method) return await method(input, { location: directory ? { directory } : undefined, signal: options?.signal })
+      } catch (error) {
+        if (!unsupported(error)) throw asError(error)
+        missing.set(server.id, Date.now() + RETRY)
+      }
+    }
+    if (server && !server.local) throw new Error(ctx.t("remote.missing", { server: server.name }))
+    // SAFETY: the Ipc client has the same method table.
+    const fallback = local as unknown as Record<string, (input: unknown, options?: IpcCallOptions) => Promise<unknown>>
+    return fallback[name]?.(input, options)
+  }
+
+  // Server events: subscribe on the routed session's server, again whenever it changes.
+  createKeyed(
+    () => target().server,
+    (server: ServerRef) => {
+      const rpc = server.client.rpc(GitRpc)
+      const stops = Object.keys(events).map((name) =>
+        // SAFETY: event names come from the `events` table GitRpc was built from.
+        (rpc.events.on as (name: string, handler: (event: { data: unknown }) => void) => () => void)(name, (event) =>
+          listeners.get(name)?.forEach((listener) => listener(event.data as never)),
+        ),
+      )
+      onCleanup(() => stops.forEach((stop) => stop()))
+    },
+    { equals: (a, b) => a.id === b.id },
+  )
+
+  const client = Object.fromEntries(
+    Object.entries(methods).map(([name]) => [
+      name,
+      (input: unknown, options?: IpcCallOptions) => call(name as keyof typeof methods, input, options),
+    ]),
+  )
+
+  return Object.assign(client, {
+    state: () => undefined,
+    on: (name: string, listener: (data: never) => void) => {
+      const set = listeners.get(name) ?? new Set()
+      set.add(listener)
+      listeners.set(name, set)
+      // The main process emits for the calls it serves.
+      const stopLocal = (local.on as (name: string, listener: (data: never) => void) => () => void)(name, listener)
+      const stop = () => {
+        set.delete(listener)
+        stopLocal()
+      }
+      if (getOwner()) onCleanup(stop)
+      return stop
+    },
+    // SAFETY: one function per method of the Git table, plus `state` and `on`, as IpcClient types it.
+  }) as unknown as GitClient
+}
+
+/** The server answered, but it has no such RPC: the plugin's server part is not installed or not loaded there. */
+function unsupported(error: unknown) {
+  if (typeof error !== "object" || error === null || !("type" in error)) return false
+  return error.type === "rpc.unavailable" || error.type === "rpc.method_not_found"
+}
+
+function asError(error: unknown) {
+  if (error instanceof Error) return error
+  if (typeof error === "object" && error !== null && "message" in error && typeof error.message === "string") return new Error(error.message)
+  return new Error(String(error))
+}

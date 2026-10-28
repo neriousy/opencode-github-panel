@@ -1,0 +1,581 @@
+/* The pull request and issue lists (src/search.tsx). */
+
+.ghp-list {
+  --ghp-list-accent: var(--v2-text-text-accent, #2f81f7);
+  --ghp-list-divider: color-mix(in srgb, var(--v2-border-border-muted) 70%, transparent);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Header: views, search, filters and the results line stay on top while the rows scroll under them. */
+
+.ghp-list-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 8px 0;
+  background: var(--v2-background-bg-base);
+  border-bottom: 1px solid var(--v2-border-border-muted);
+}
+
+.ghp-list-presets {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ghp-list .ghp-chips {
+  flex: 1;
+  flex-wrap: nowrap;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  &[data-fade-start] {
+    mask-image: linear-gradient(to right, transparent, #000 20px);
+  }
+
+  &[data-fade-end] {
+    mask-image: linear-gradient(to left, transparent, #000 20px);
+  }
+
+  &[data-fade-start][data-fade-end] {
+    mask-image: linear-gradient(to right, transparent, #000 20px, #000 calc(100% - 20px), transparent);
+  }
+}
+
+.ghp-list .ghp-chip {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  white-space: nowrap;
+
+  &:focus-visible,
+  & :focus-visible {
+    outline: 2px solid var(--v2-border-border-focus);
+    outline-offset: -2px;
+  }
+}
+
+.ghp-chip-saved {
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.ghp-chip-label,
+.ghp-chip-remove {
+  height: 100%;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ghp-chip-label {
+  padding: 0 10px;
+  border-radius: 12px;
+}
+
+.ghp-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0;
+  padding: 0;
+  opacity: 0;
+  color: var(--v2-icon-icon-muted);
+  transition:
+    width 80ms ease-out,
+    opacity 80ms ease-out;
+
+  &:hover {
+    color: var(--v2-text-text-base);
+  }
+}
+
+.ghp-chip-saved:is(:hover, :focus-within) {
+  .ghp-chip-label {
+    padding-right: 2px;
+  }
+
+  .ghp-chip-remove {
+    width: 20px;
+    opacity: 1;
+  }
+}
+
+.ghp-list-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ghp-list .ghp-search {
+  position: relative;
+  display: block;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+}
+
+.ghp-search-input {
+  width: 100%;
+}
+
+.ghp-search-suggest {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 264px;
+  overflow-y: auto;
+  padding: 2px;
+  border-radius: 6px;
+  background: var(--v2-background-bg-layer-01);
+  box-shadow: var(--v2-elevation-floating);
+}
+
+.ghp-search-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 4px;
+  cursor: default;
+  white-space: nowrap;
+
+  &[data-active] {
+    background: var(--v2-overlay-simple-overlay-hover);
+  }
+}
+
+.ghp-search-option-hint {
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--v2-text-text-faint);
+  font-size: 11px;
+}
+
+.ghp-swatch {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ghp-label);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #000 15%, transparent);
+}
+
+.ghp-list-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ghp-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 2px 0 8px;
+  border-radius: 11px;
+  background: var(--v2-background-bg-layer-02);
+  font-size: 12px;
+}
+
+.ghp-filter-chip-key {
+  flex-shrink: 0;
+  color: var(--v2-text-text-faint);
+}
+
+.ghp-filter-chip[data-negated] .ghp-filter-chip-key {
+  color: var(--ghp-closed);
+}
+
+.ghp-filter-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--v2-icon-icon-muted);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--v2-overlay-simple-overlay-hover);
+    color: var(--v2-text-text-base);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--v2-border-border-focus);
+  }
+}
+
+.ghp-list-summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 30px;
+  color: var(--v2-text-text-muted);
+  font-size: 12px;
+}
+
+.ghp-list-count {
+  flex: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ghp-list-new {
+  color: var(--ghp-list-accent);
+  font-weight: 500;
+}
+
+.ghp-list-save,
+.ghp-list-sort {
+  flex-shrink: 0;
+}
+
+/* The sort menu's trigger reads as a quiet text control, "Newest ▾". */
+.ghp-list-sort [data-component="button-v2"] {
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--v2-text-text-base);
+  font-size: 12px;
+  font-weight: 500;
+
+  &::after {
+    content: "▾" / "";
+    margin-left: 4px;
+    color: var(--v2-text-text-faint);
+    font-size: 10px;
+  }
+
+  &:hover {
+    background: var(--v2-overlay-simple-overlay-hover);
+  }
+}
+
+/* Rows: flat, fixed-height list items placed by the virtual scroller. */
+
+.ghp-list .ghp-results {
+  position: relative;
+  outline: none;
+}
+
+.ghp-list .ghp-pr {
+  --ghp-row-bg: var(--v2-background-bg-base);
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
+  gap: 8px;
+  height: 48px;
+  min-height: 0;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--ghp-list-divider);
+  overflow: hidden;
+  contain: layout style;
+
+  &:hover {
+    --ghp-row-bg: color-mix(in srgb, var(--v2-text-text-base) 5%, var(--v2-background-bg-base));
+    background: var(--ghp-row-bg);
+  }
+
+  &:focus-visible {
+    background: var(--ghp-row-bg);
+  }
+}
+
+.ghp-list[data-density="compact"] .ghp-pr {
+  height: 32px;
+}
+
+.ghp-list .ghp-results:focus .ghp-pr[data-active] {
+  --ghp-row-bg: color-mix(in srgb, var(--v2-text-text-base) 8%, var(--v2-background-bg-base));
+  background: var(--ghp-row-bg);
+}
+
+.ghp-list .ghp-results:focus-visible .ghp-pr[data-active] {
+  box-shadow: inset 2px 0 0 var(--v2-border-border-focus);
+}
+
+.ghp-list .ghp-pr-main {
+  gap: 2px;
+}
+
+.ghp-list .ghp-pr-title {
+  align-items: center;
+  min-width: 0;
+  line-height: 18px;
+}
+
+.ghp-list .ghp-pr[data-mark="new"] .ghp-pr-title > .ghp-ellipsis {
+  font-weight: 600;
+}
+
+.ghp-pr-number {
+  flex-shrink: 0;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.ghp-pr-mark {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ghp-list-accent);
+
+  &[data-mark="updated"] {
+    width: 5px;
+    height: 5px;
+    background: none;
+    box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--ghp-list-accent) 70%, transparent);
+  }
+}
+
+.ghp-list .ghp-pr-sub {
+  line-height: 18px;
+}
+
+/* Whole labels or none: the ones that do not fit wrap onto a hidden second line instead of shrinking to stubs. */
+.ghp-pr-labels {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  flex-shrink: 1;
+  gap: 4px;
+  min-width: 0;
+  max-height: 20px;
+  overflow: hidden;
+
+  .ghp-label {
+    flex-shrink: 0;
+    max-width: 120px;
+  }
+}
+
+.ghp-list[data-density="compact"] .ghp-pr-labels .ghp-label {
+  max-width: 96px;
+}
+
+.ghp-pr-more {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Meta: fixed slots aligned on the right across rows; the row menu takes their place on hover or focus. */
+
+.ghp-pr-meta {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 6px;
+  color: var(--v2-text-text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  transition: opacity 80ms ease-out;
+}
+
+.ghp-pr-checks {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+
+  &[data-checks="success"] {
+    color: var(--ghp-open);
+  }
+
+  &[data-checks="failure"] {
+    color: var(--ghp-closed);
+  }
+}
+
+.ghp-pr-pending {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #d97706;
+}
+
+.ghp-pr-comments {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  min-width: 32px;
+}
+
+.ghp-pr-time {
+  min-width: 26px;
+  text-align: right;
+}
+
+.ghp-list .ghp-row-actions {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  padding-left: 12px;
+  transform: translateY(-50%);
+  background: linear-gradient(to right, transparent, var(--ghp-row-bg) 12px);
+  pointer-events: none;
+}
+
+.ghp-list .ghp-pr:hover .ghp-row-actions,
+.ghp-list .ghp-pr:focus-within .ghp-row-actions,
+.ghp-list .ghp-results:focus-visible .ghp-pr[data-active] .ghp-row-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ghp-list .ghp-pr:hover .ghp-pr-meta,
+.ghp-list .ghp-pr:focus-within .ghp-pr-meta,
+.ghp-list .ghp-results:focus-visible .ghp-pr[data-active] .ghp-pr-meta {
+  opacity: 0;
+}
+
+@media (hover: none) {
+  .ghp-list .ghp-row-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+:root[data-motion="reduce"] :is(.ghp-pr-meta, .ghp-chip-remove) {
+  transition: none;
+}
+
+.ghp-list .ghp-more {
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ghp-list-error,
+.ghp-list-empty {
+  overflow-wrap: anywhere;
+}
+
+.ghp-list-error-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* The filter pickers (label, author, assignee, milestone). */
+
+.ghp-list-picks {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.ghp-list-pick {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 4px;
+  cursor: default;
+
+  &[data-active] {
+    background: var(--v2-overlay-simple-overlay-hover);
+  }
+}
+
+/* Multi-select: a checkbox takes the state icon's place on hover, on the active row, and on every row while some are picked. */
+
+.ghp-list .ghp-pr-state {
+  position: relative;
+}
+
+.ghp-pr-check {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin: auto;
+  padding: 0;
+  border: 1.5px solid var(--v2-border-border-base);
+  border-radius: 4px;
+  background: var(--ghp-row-bg);
+  color: var(--v2-background-bg-base);
+  cursor: pointer;
+
+  &:hover {
+    border-color: var(--ghp-list-accent);
+  }
+
+  &[aria-checked="true"] {
+    border-color: var(--ghp-list-accent);
+    background: var(--ghp-list-accent);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--v2-border-border-focus);
+    outline-offset: 1px;
+  }
+}
+
+.ghp-list .ghp-pr:hover .ghp-pr-check,
+.ghp-list .ghp-pr[data-picked] .ghp-pr-check,
+.ghp-list .ghp-results[data-selecting] .ghp-pr-check,
+.ghp-list .ghp-results:focus-visible .ghp-pr[data-active] .ghp-pr-check {
+  display: flex;
+}
+
+.ghp-list .ghp-pr:hover .ghp-pr-state > .ghp-pr-icon,
+.ghp-list .ghp-pr[data-picked] .ghp-pr-state > .ghp-pr-icon,
+.ghp-list .ghp-results[data-selecting] .ghp-pr-state > .ghp-pr-icon,
+.ghp-list .ghp-results:focus-visible .ghp-pr[data-active] .ghp-pr-state > .ghp-pr-icon {
+  visibility: hidden;
+}
+
+.ghp-list .ghp-pr[data-picked] {
+  --ghp-row-bg: color-mix(in srgb, var(--ghp-list-accent) 10%, var(--v2-background-bg-base));
+  background: var(--ghp-row-bg);
+}
+
+@media (hover: none) {
+  .ghp-list .ghp-pr-check {
+    display: flex;
+  }
+
+  .ghp-list .ghp-pr-state > .ghp-pr-icon {
+    visibility: hidden;
+  }
+}

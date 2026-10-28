@@ -1,0 +1,246 @@
+/* The agent's GitHub actions: the activity page, the item tab banner and the list mark. */
+
+.ghp-activity {
+  outline: none;
+  padding-bottom: 8px;
+}
+
+.ghp-activity-toolbar {
+  border-bottom: 1px solid var(--v2-border-border-muted);
+}
+
+.ghp-activity-section + .ghp-group,
+.ghp-activity-group + .ghp-activity-group {
+  border-top: 1px solid var(--v2-border-border-muted);
+}
+
+.ghp-activity-section .ghp-section-header {
+  gap: 6px;
+  padding-right: 8px;
+}
+
+.ghp-activity-section .ghp-section-title .ghp-tab-count {
+  margin-inline-start: 2px;
+  text-transform: none;
+}
+
+.ghp-activity-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 12px;
+  border-inline-start: 2px solid transparent;
+
+  & + & {
+    border-top: 1px solid var(--v2-border-border-muted);
+  }
+
+  &[data-active] {
+    border-inline-start-color: var(--v2-text-text-accent, #0969da);
+    background: var(--v2-overlay-simple-overlay-hover);
+  }
+}
+
+.ghp-activity:not(:focus-within) .ghp-activity-row[data-active] {
+  border-inline-start-color: transparent;
+  background: none;
+}
+
+.ghp-activity-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ghp-activity-ref {
+  display: inline-flex;
+  flex: 1;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 530;
+  text-align: start;
+  cursor: pointer;
+
+  &:hover .ghp-ellipsis {
+    text-decoration: underline;
+  }
+}
+
+.ghp-activity-status {
+  flex-shrink: 0;
+  color: var(--v2-text-text-faint);
+  font-size: 11px;
+
+  &[data-status="done"] {
+    color: var(--ghp-open);
+  }
+
+  &[data-status="failed"] {
+    color: var(--ghp-closed);
+  }
+}
+
+.ghp-activity-what {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  color: var(--v2-text-text-base);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.ghp-activity-note {
+  color: var(--v2-text-text-muted);
+  font-size: 12px;
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+
+.ghp-activity-body {
+  padding-inline-start: 8px;
+  border-inline-start: 2px solid var(--v2-border-border-muted);
+}
+
+.ghp-activity-text {
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ghp-activity-error {
+  color: var(--ghp-closed);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.ghp-activity-buttons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  margin-top: 2px;
+
+  &:empty {
+    display: none;
+  }
+}
+
+.ghp-activity-keys {
+  padding: 8px 12px 0;
+}
+
+.ghp-count[data-tone="attention"] {
+  color: var(--v2-state-fg-warning, #9a6700);
+}
+
+/* Proposals at the top of an issue or pull request tab. */
+
+.ghp-agent-banner {
+  flex-direction: column;
+  align-items: stretch;
+  margin: 8px 12px 0;
+  padding: 6px 8px;
+
+  .ghp-clamp {
+    padding-inline-start: 22px;
+  }
+
+  .ghp-activity-note {
+    padding-inline-start: 22px;
+  }
+}
+
+.ghp-agent-banner-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  min-width: 0;
+}
+
+/* A row in the pull request and issue lists that the agent touched. */
+
+.ghp-pr-agent {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--v2-text-text-faint);
+
+  &[data-agent="pending"] {
+    color: var(--v2-state-fg-warning, #9a6700);
+  }
+}
+
+/* A triage run at the top of its session's activity. */
+
+.ghp-triage-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px 10px;
+  border-bottom: 1px solid var(--v2-border-border-muted);
+  font-size: 12px;
+
+  .ghp-triage-source,
+  .ghp-triage-query {
+    color: var(--v2-text-text-muted);
+  }
+}
+
+.ghp-triage-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ghp-triage-title {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ghp-triage-progress {
+  height: 4px;
+  margin-top: 2px;
+  border-radius: 2px;
+  background: var(--v2-background-bg-layer-02);
+  overflow: hidden;
+}
+
+.ghp-triage-bar {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--v2-text-text-accent, #2f81f7);
+  transition: width 200ms ease-out;
+}
+
+.ghp-triage-head[data-finished] .ghp-triage-bar {
+  background: var(--ghp-open);
+}
+
+.ghp-triage-counts {
+  color: var(--v2-text-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.ghp-triage-done {
+  color: var(--ghp-open);
+  font-weight: 500;
+}
+
+.ghp-triage-rules {
+  color: var(--v2-text-text-base);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+:root[data-motion="reduce"] .ghp-triage-bar {
+  transition: none;
+}

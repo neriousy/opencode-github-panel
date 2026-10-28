@@ -1,0 +1,790 @@
+/* The issue, pull request, run, commit and inbox views; loaded after panel.css. One flat surface: rows and entries are
+   split by dividers, headers are text rows, and only content (a diff, a log, an input) keeps a border. */
+
+.ghp-item {
+  --ghp-item-tabs: 36px;
+  --ghp-divider: 1px solid var(--v2-border-border-muted);
+}
+
+:where(.ghp-entry-head, .ghp-thread-head, .ghp-group-head, .ghp-dfile-toggle, .ghp-findex-row, .ghp-clamp-toggle, .ghp-earlier, .ghp-more-replies, .ghp-steps-more, .ghp-job, .ghp-check-row) {
+  box-sizing: border-box;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: start;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid var(--v2-border-border-focus);
+    outline-offset: -2px;
+    border-radius: 4px;
+  }
+}
+
+.ghp-chevron {
+  flex-shrink: 0;
+  color: var(--v2-icon-icon-muted);
+}
+
+/* Header: state, title, meta, labels, and for a pull request its branch, size and actions, all on one surface. */
+
+.ghp-item-header {
+  gap: 6px;
+  padding: 10px 12px;
+}
+
+.ghp-item-header > .ghp-item-actions {
+  padding-top: 2px;
+}
+
+/* An issue's branches and pull requests, one row. */
+
+.ghp-item-linked {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.ghp-item-linked-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+
+  code {
+    min-width: 0;
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+  }
+}
+
+.ghp-item-linked-action {
+  flex-shrink: 0;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--v2-text-text-accent);
+  font: inherit;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    text-decoration: underline;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+}
+
+.ghp-item-linked-pr .ghp-check-dot {
+  width: 6px;
+  height: 6px;
+}
+
+.ghp-item-tabs {
+  box-sizing: border-box;
+  align-items: center;
+  height: var(--ghp-item-tabs);
+  margin-top: 0;
+  padding: 0 8px;
+  border-top: 0;
+}
+
+/* A section's summary row: counts on the left, Fold all / Collapse all on the right. */
+
+.ghp-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 2px 6px 2px 12px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Foldable groups: checks by outcome, workflow runs, changed files, inbox sections and repositories. */
+
+.ghp-group + .ghp-group,
+.ghp-bar + .ghp-group {
+  border-top: var(--ghp-divider);
+}
+
+.ghp-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 12px 0 8px;
+  color: var(--v2-text-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+
+  &:hover {
+    background: var(--v2-overlay-simple-overlay-hover);
+  }
+}
+
+.ghp-group-title {
+  flex: 1;
+
+  .ghp-check-dot {
+    display: inline-block;
+    margin-inline-end: 6px;
+    vertical-align: middle;
+  }
+
+  [data-component] {
+    margin-inline-start: 6px;
+    vertical-align: middle;
+  }
+}
+
+.ghp-group-body {
+  padding-bottom: 4px;
+}
+
+.ghp-group .ghp-group {
+  border-top: 0;
+
+  > .ghp-group-head {
+    min-height: 26px;
+    padding-left: 22px;
+    font-weight: 500;
+  }
+}
+
+/* Clamped text */
+
+.ghp-clamp-box {
+  overflow: hidden;
+}
+
+.ghp-clamp[data-clamped] .ghp-clamp-box {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent);
+}
+
+.ghp-clamp-toggle {
+  margin-top: 2px;
+  padding: 2px 0;
+  color: var(--v2-text-text-accent);
+  font-size: 12px;
+  font-weight: 500;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+/* Conversation: entries in time order, split by dividers. */
+
+.ghp-entry {
+  min-width: 0;
+  padding: 6px 12px 8px;
+  border-top: var(--ghp-divider);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.ghp-bar + .ghp-entry {
+  border-top: 0;
+}
+
+.ghp-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% + 8px);
+  min-width: 0;
+  min-height: 24px;
+  margin-inline: -4px;
+  padding-inline: 4px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+
+  &:hover {
+    background: var(--v2-overlay-simple-overlay-hover);
+  }
+}
+
+.ghp-entry-author {
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.ghp-entry-summary {
+  flex: 1;
+  color: var(--v2-text-text-muted);
+}
+
+.ghp-entry-body {
+  padding: 2px 0 0 20px;
+  overflow-x: auto;
+}
+
+.ghp-entry-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+  font-size: 12px;
+}
+
+.ghp-note[data-folded] {
+  padding-bottom: 6px;
+}
+
+.ghp-note[data-bot] .ghp-entry-author {
+  color: var(--v2-text-text-muted);
+}
+
+/* A review without text: one line. */
+.ghp-entry-event {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding-block: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+
+  b {
+    font-weight: 600;
+  }
+}
+
+.ghp-review-icon {
+  flex-shrink: 0;
+  color: var(--v2-icon-icon-muted);
+}
+
+:is(.ghp-entry-event, .ghp-note)[data-state="APPROVED"] :is(.ghp-review-icon, .ghp-review-verb) {
+  color: var(--ghp-open);
+}
+
+:is(.ghp-entry-event, .ghp-note)[data-state="CHANGES_REQUESTED"] :is(.ghp-review-icon, .ghp-review-verb) {
+  color: var(--ghp-closed);
+}
+
+.ghp-review-verb {
+  color: var(--v2-text-text-muted);
+}
+
+/* "Show N earlier comments": a divider with its label in the middle. */
+.ghp-earlier {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 12px;
+  border-top: var(--ghp-divider);
+  color: var(--v2-text-text-accent);
+  font-size: 12px;
+  font-weight: 500;
+
+  &::before,
+  &::after {
+    content: "";
+    flex: 1;
+    border-top: 1px dashed var(--v2-border-border-muted);
+  }
+
+  &:hover span {
+    text-decoration: underline;
+  }
+}
+
+.ghp-item-reply {
+  margin: 0;
+  padding: 10px 12px 0;
+  border-top: var(--ghp-divider);
+}
+
+/* Review threads: a header row, then the code and replies on a rail. No box: in the conversation it is an entry, in a
+   diff it sits between the lines. */
+
+.ghp-entry-thread {
+  padding-block: 4px 6px;
+}
+
+.ghp-thread {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+
+  &[data-resolved] {
+    opacity: 1;
+  }
+}
+
+.ghp-thread-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% + 8px);
+  min-height: 26px;
+  margin-inline: -4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: none;
+  font-size: 12px;
+  white-space: nowrap;
+
+  &:hover {
+    background: var(--v2-overlay-simple-overlay-hover);
+  }
+}
+
+.ghp-thread-path {
+  flex: 0 1 auto;
+  max-width: 55%;
+  font-family: var(--font-family-mono);
+  font-size: 11px;
+}
+
+.ghp-thread[data-folded] .ghp-thread-path {
+  color: var(--v2-text-text-muted);
+}
+
+.ghp-thread-count {
+  flex-shrink: 0;
+}
+
+.ghp-thread-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0 2px 6px;
+  padding-left: 13px;
+  border-left: 2px solid var(--v2-border-border-muted);
+}
+
+.ghp-thread-hunk {
+  border: var(--ghp-divider);
+  border-radius: 6px;
+}
+
+.ghp-thread-comment {
+  padding: 0;
+  border-top: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.ghp-more-replies {
+  align-self: flex-start;
+  padding: 2px 0;
+  color: var(--v2-text-text-accent);
+  font-size: 12px;
+  font-weight: 500;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.ghp-thread-foot {
+  padding: 0;
+  border-top: 0;
+}
+
+.ghp-reply-stub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Changed files */
+
+.ghp-files {
+  gap: 0;
+  padding: 0 0 8px;
+}
+
+.ghp-findex {
+  margin-bottom: 4px;
+}
+
+.ghp-findex-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 24px;
+  padding: 0 12px 0 28px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+
+  &:hover {
+    background: var(--v2-overlay-simple-overlay-hover);
+  }
+
+  &[data-viewed] .ghp-dfile-path {
+    color: var(--v2-text-text-faint);
+  }
+}
+
+/* A diff is content, so it keeps one border; nothing around it has one. */
+.ghp-dfile {
+  margin: 0 12px 8px;
+  border-radius: 6px;
+  scroll-margin-top: calc(var(--ghp-item-tabs) + 4px);
+
+  &:not([data-open]) .ghp-dfile-head {
+    border-bottom: 0;
+  }
+
+  /* A folded file is a plain row in a list, not a box: only an open diff gets the border. */
+  &:not([data-open]) {
+    margin-bottom: 0;
+    border-color: transparent;
+    border-bottom-color: var(--v2-border-border-muted);
+    border-radius: 0;
+
+    .ghp-dfile-head {
+      background: transparent;
+    }
+  }
+
+  &:not([data-open]):hover .ghp-dfile-head {
+    background: var(--v2-background-bg-layer-02, rgba(127, 127, 127, 0.08));
+  }
+
+  &[data-open] {
+    margin-top: 8px;
+  }
+}
+
+.ghp-dfile-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 30px;
+  padding: 0 6px 0 0;
+  cursor: default;
+}
+
+.ghp-item-tabs ~ .ghp-files .ghp-dfile-head {
+  top: var(--ghp-item-tabs);
+}
+
+.ghp-dfile-toggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 4px 0 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ghp-dfile[data-viewed] .ghp-dfile-path {
+  color: var(--v2-text-text-faint);
+}
+
+.ghp-dfile-viewed {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px;
+  color: var(--v2-text-text-muted);
+  font-size: 11px;
+  cursor: pointer;
+
+  input {
+    margin: 0;
+    cursor: pointer;
+  }
+}
+
+.ghp-dthread {
+  padding: 6px 10px 6px 12px;
+}
+
+/* Checks */
+
+.ghp-checks-view {
+  padding-bottom: 8px;
+}
+
+.ghp-check-row {
+  height: 28px;
+  padding: 0 12px 0 28px;
+}
+
+.ghp-check-runs .ghp-pr {
+  min-height: 40px;
+  padding-left: 22px;
+}
+
+/* Workflow run tab: jobs fold to rows, the chosen job's log below. */
+
+.ghp-jobs {
+  gap: 0;
+  padding: 4px 0;
+}
+
+.ghp-job {
+  width: 100%;
+  height: 30px;
+  padding: 0 12px 0 8px;
+  border-radius: 0;
+  font-size: 13px;
+
+  &[data-selected] {
+    background: none;
+  }
+}
+
+.ghp-job-group[data-selected] > .ghp-job {
+  background: var(--v2-overlay-simple-overlay-pressed);
+  font-weight: 600;
+}
+
+.ghp-job-log-mark {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.ghp-steps {
+  padding: 2px 12px 6px 30px;
+}
+
+.ghp-step[data-state="failure"] {
+  color: var(--ghp-closed);
+  font-weight: 600;
+}
+
+.ghp-steps-more {
+  align-self: flex-start;
+  height: 22px;
+  color: var(--v2-text-text-accent);
+  font-size: 12px;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+.ghp-job-detail {
+  gap: 6px;
+  padding: 6px 12px 8px;
+}
+
+.ghp-log-head .ghp-section-title {
+  min-width: 0;
+  padding-left: 0;
+}
+
+/* Commit tab */
+
+.ghp-commit-message {
+  margin: 0;
+  font-family: inherit;
+  white-space: pre-wrap;
+  color: var(--v2-text-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Inbox: sections and repositories fold; each notification is one line. */
+
+.ghp-inbox-row {
+  gap: 8px;
+  min-height: 30px;
+  padding: 2px 6px 2px 12px;
+  font-size: 13px;
+
+  &[data-unread] .ghp-inbox-title {
+    font-weight: 650;
+  }
+}
+
+.ghp-inbox-repo .ghp-inbox-row {
+  padding-left: 30px;
+}
+
+.ghp-inbox-title {
+  flex: 1;
+}
+
+.ghp-inbox-where {
+  flex: 0 1 auto;
+  max-width: 45%;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ghp-inbox-row .ghp-pr-state .ghp-pr-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* The hover card is the only surface: nothing inside it is boxed. */
+
+.ghp-card-body .ghp-item-stats code {
+  padding: 0;
+  background: none;
+}
+
+/* Draft reviews: the agent's or the user's review waiting to be submitted. Drafts are tinted with the accent lane and
+   marked "Draft"; they sit between the diff lines like threads, and the bar under the files holds the verdict, the
+   summary and Submit. */
+
+.ghp-draft-banner {
+  flex-direction: column;
+  align-items: stretch;
+  margin: 8px 12px 0;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--ghp-lane-0) 12%, transparent);
+}
+
+.ghp-draft-banner-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  min-width: 0;
+}
+
+.ghp-draft-note {
+  padding-inline-start: 22px;
+  color: var(--v2-text-text-muted);
+}
+
+.ghp-draft-pill {
+  border: 1px dashed color-mix(in srgb, var(--ghp-lane-0) 60%, transparent);
+  background: color-mix(in srgb, var(--ghp-lane-0) 10%, transparent);
+  color: var(--v2-text-text-base);
+  white-space: nowrap;
+}
+
+.ghp-draft-count {
+  color: var(--ghp-lane-0);
+}
+
+.ghp-dnum[data-commentable] {
+  cursor: pointer;
+
+  &:hover {
+    color: var(--ghp-lane-0);
+  }
+}
+
+.ghp-ddraft {
+  border-inline-start: 2px solid var(--ghp-lane-0);
+  background: color-mix(in srgb, var(--ghp-lane-0) 5%, var(--v2-background-bg-base));
+}
+
+.ghp-draft-comment {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  &[data-orphan] .ghp-draft-comment-body {
+    opacity: 0.8;
+  }
+}
+
+.ghp-draft-comment-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  font-size: 12px;
+}
+
+.ghp-draft-comment-body {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.ghp-draft-entry .ghp-entry-head {
+  white-space: nowrap;
+}
+
+.ghp-draft-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-top: 2px solid var(--ghp-lane-0);
+  background: var(--v2-background-bg-base);
+  font-size: 12px;
+}
+
+.ghp-draft-bar-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.ghp-draft-verdict > button {
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+
+  &[data-selected][data-event="APPROVE"] {
+    color: var(--ghp-open);
+  }
+
+  &[data-selected][data-event="REQUEST_CHANGES"] {
+    color: var(--ghp-closed);
+  }
+}
+
+.ghp-draft-drift {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--v2-state-fg-warning, #9a6700);
+}
+
+.ghp-draft-summary {
+  width: 100%;
+}
+
+.ghp-draft-summary-toggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 26px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--v2-overlay-simple-overlay-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--v2-border-border-focus);
+    outline-offset: -2px;
+  }
+}

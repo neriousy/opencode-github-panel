@@ -1,0 +1,129 @@
+/* Bulk actions, saved replies and the triage form (src/triage.tsx). */
+
+/* The bar that takes the results line's place while rows are picked. */
+
+.ghp-bulk {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 30px;
+  margin: 0 -8px;
+  padding: 0 4px;
+  background: color-mix(in srgb, var(--v2-text-text-accent, #2f81f7) 10%, var(--v2-background-bg-base));
+  font-size: 12px;
+
+  [data-component="button-v2"] {
+    flex-shrink: 0;
+  }
+}
+
+.ghp-bulk-count {
+  flex: 1;
+  min-width: 48px;
+  padding: 0 4px;
+  color: var(--v2-text-text-base);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A field label with a control at its end, such as the saved replies menu. */
+
+.ghp-field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.ghp-reply-menu [data-component="button-v2"] {
+  height: 24px;
+  padding: 0 6px;
+  font-size: 12px;
+}
+
+.ghp-replies {
+  display: flex;
+  flex-direction: column;
+}
+
+.ghp-reply {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px 0;
+
+  & + & {
+    border-top: 1px solid var(--v2-border-border-muted);
+  }
+}
+
+.ghp-reply-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.ghp-reply-name {
+  font-weight: 530;
+}
+
+/* The checkmark of a multi-pick list row. */
+
+.ghp-pick-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin-inline-end: 8px;
+  border: 1.5px solid var(--v2-border-border-base);
+  border-radius: 3px;
+  color: var(--v2-background-bg-base);
+
+  &[data-checked] {
+    border-color: var(--v2-text-text-accent, #2f81f7);
+    background: var(--v2-text-text-accent, #2f81f7);
+  }
+}
+
+/* The triage form. */
+
+.ghp-triage-form .ghp-triage-source {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.ghp-triage-query {
+  display: block;
+  font-family: var(--v2-font-mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+
+.ghp-triage-replies {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.ghp-triage-batch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+
+  > :first-child {
+    flex: 0 0 72px;
+  }
+}

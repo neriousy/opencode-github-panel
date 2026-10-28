@@ -1,0 +1,56 @@
+{
+  "name": "opencode-github-panel",
+  "version": "0.1.0",
+  "description": "Git and GitHub for OpenCode Desktop: commit graph, branches, pull requests, reviews, CI, issues, triage and agent tools with an approval queue",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "github",
+    "git",
+    "pull-requests",
+    "issues",
+    "code-review",
+    "triage"
+  ],
+  "license": "MIT",
+  "author": "neriousy",
+  "homepage": "https://github.com/neriousy/opencode-github-panel#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/neriousy/opencode-github-panel.git"
+  },
+  "bugs": {
+    "url": "https://github.com/neriousy/opencode-github-panel/issues"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./rpc": "./src/rpc.ts",
+    "./gui-experimental": "./dist/gui-experimental.cjs"
+  },
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "typecheck": "tsgo --noEmit",
+    "test": "bun test",
+    "prepublishOnly": "bun run typecheck && bun test && bun run build"
+  },
+  "devDependencies": {
+    "@opencode/plugin": "2.2.0",
+    "@tanstack/query-core": "^5.105.0",
+    "@types/bun": "^1.4.4",
+    "@types/node": "^26.6.5",
+    "@typescript/native-preview": "^7.0.0-dev.20260707.2",
+    "effect": "4.0.1",
+    "solid-js": "^1.9.17",
+    "vite": "^7",
+    "vite-plugin-solid": "^2.11.14"
+  }
+}
