@@ -79,5 +79,4 @@ export const triage = {
   "triage.dialog.batchHint": "The agent proposes for {{count}} items, then waits for your review.",
   "triage.dialog.start": "Start triage of {{what}}",
   "triage.sessionTitle": "Triage: {{what}}",
-  "triage.draft": "Opened the triage prompt as a draft; send it to start.",
 }

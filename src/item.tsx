@@ -412,14 +412,14 @@ function LinkedWork(props: {
   const t = ctx.t
   const q = props.actions.queries
   const branches = latest(q.query(() => ({ ...q.options.branches(props.cwd ?? ""), enabled: !!props.cwd })))
+  const own = () => (branches.latest ?? []).filter((branch) => !branch.remote && props.actions.linkedIssue(props.item.repo, branch.name) === props.item.number)
   const linked = createMemo(
-    () =>
-      (branches.latest ?? [])
-        .filter((branch) => !branch.remote && props.actions.linkedIssue(props.item.repo, branch.name) === props.item.number)
-        .map((branch) => branch.name),
+    () => own().map((branch) => branch.name),
     [],
     { equals: (a, b) => a.join("\n") === b.join("\n") },
   )
+  // A branch checked out in another worktree cannot be switched to here; its session opens there instead.
+  const worktreeOf = (name: string) => own().find((branch) => branch.name === name)?.worktree
   const pulls = latest(q.query(() => ({ ...q.options.branchPulls(props.cwd ?? "", linked()), enabled: !!props.cwd && linked().length > 0 })))
   const prs = () => {
     const opened = linked().flatMap((name) => {
@@ -444,9 +444,25 @@ function LinkedWork(props: {
                 when={name !== props.current}
                 fallback={<span class="ghp-faint">{t("linked.current")}</span>}
               >
-                <button type="button" class="ghp-item-linked-action" disabled={!!props.busy} onClick={() => props.onSwitch(name)}>
-                  {t("linked.switch")}
-                </button>
+                <Show
+                  when={worktreeOf(name)}
+                  fallback={
+                    <button type="button" class="ghp-item-linked-action" disabled={!!props.busy} onClick={() => props.onSwitch(name)}>
+                      {t("linked.switch")}
+                    </button>
+                  }
+                >
+                  {(directory) => (
+                    <button
+                      type="button"
+                      class="ghp-item-linked-action"
+                      title={t("linked.worktreeTitle", { directory: directory() })}
+                      onClick={() => void props.actions.openDirectory(directory(), name)}
+                    >
+                      {t("linked.worktree")}
+                    </button>
+                  )}
+                </Show>
               </Show>
             </span>
           )}

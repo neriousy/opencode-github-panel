@@ -132,8 +132,11 @@ export function parseDecorations(value: string): Ref[] {
     })
 }
 
-/** Parses `git for-each-ref --format=BRANCH_FORMAT refs/heads refs/remotes`. */
-export function parseBranches(output: string): Branch[] {
+/**
+ * Parses `git for-each-ref --format=BRANCH_FORMAT refs/heads refs/remotes`. A local branch checked out in another
+ * worktree (`worktrees`, from `parseWorktrees`) carries that worktree's folder; the current one never does.
+ */
+export function parseBranches(output: string, worktrees: ReadonlyMap<string, string> = new Map()): Branch[] {
   return output
     .split("\n")
     .filter(Boolean)
@@ -143,6 +146,7 @@ export function parseBranches(output: string): Branch[] {
       const remote = ref.startsWith("refs/remotes/")
       const name = ref.replace(/^refs\/(heads|remotes)\//, "")
       if (remote && (name.endsWith("/HEAD") || !name.includes("/"))) return []
+      const worktree = remote || head === "*" ? undefined : worktrees.get(name)
       return [
         {
           name,
@@ -155,9 +159,27 @@ export function parseBranches(output: string): Branch[] {
           sha: sha ?? "",
           date: Number(date ?? 0),
           subject: subject ?? "",
+          // The RPC response is JSON: no worktree is a missing key, never `undefined`.
+          ...(worktree ? { worktree } : {}),
         },
       ]
     })
+}
+
+/**
+ * Parses `git worktree list --porcelain`: the folder each local branch is checked out in, by branch name. Detached and
+ * bare worktrees have no branch; a prunable one's folder is gone, so it is left out too.
+ */
+export function parseWorktrees(output: string): Map<string, string> {
+  return new Map(
+    output.split(/\n\n+/).flatMap((record): [string, string][] => {
+      const lines = record.split("\n")
+      const path = lines.find((line) => line.startsWith("worktree "))?.slice("worktree ".length)
+      const branch = lines.find((line) => line.startsWith("branch refs/heads/"))?.slice("branch refs/heads/".length)
+      if (!path || !branch || lines.some((line) => line === "prunable" || line.startsWith("prunable "))) return []
+      return [[branch, path]]
+    }),
+  )
 }
 
 /**

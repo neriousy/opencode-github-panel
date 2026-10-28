@@ -7,6 +7,12 @@ export interface Context {
   readonly text: string
 }
 
+/** A session title on one line of at most 80 characters, such as "#123 Fix the login redirect". */
+export function sessionTitle(text: string) {
+  const line = text.replace(/\s+/g, " ").trim()
+  return line.length > 80 ? `${line.slice(0, 79).trimEnd()}…` : line
+}
+
 const LIMIT = 24_000
 // Parts that would otherwise crowd out the rest: a huge description, a pull request touching thousands of files, a
 // minified line in a log.

@@ -1,6 +1,6 @@
 import { createSignal, For, onMount, Show } from "solid-js"
 import type { Context, SetupContext, UiMenuEntry } from "@opencode/plugin/gui"
-import { itemContext, type Context as ChatContext } from "./context"
+import { itemContext, sessionTitle, type Context as ChatContext } from "./context"
 import { tabId, type TabTarget } from "./tabs"
 import { createQueries } from "./queries"
 import { createTransport, type GitClient } from "./transport"
@@ -26,6 +26,16 @@ export function pullFor(pulls: Pulls | undefined, branch: string | null | undefi
 
 export function repoOf(overview: Overview | null | undefined) {
   return overview?.remote ? `${overview.remote.owner}/${overview.remote.repo}` : undefined
+}
+
+/** The last part of a folder's path, as the sidebar names a worktree. */
+export function folderOf(path: string) {
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path
+}
+
+/** A prompt with what it is about quoted after it, as a new session's first message. */
+function withContext(prompt: string, context: ChatContext) {
+  return `${prompt}\n\n<context source="${context.subject.replaceAll('"', "'")}">\n${context.text}\n</context>`
 }
 
 /** The user-facing git flows, shared by the panel and the command palette. Each one reports its own outcome. */
@@ -267,18 +277,28 @@ export function createActions(ctx: SetupContext<typeof definition>) {
 
   /**
    * Starts work on an issue in one dialog: a branch named after it (fresh from the default branch, or from the current
-   * one), what to do with uncommitted changes, and the agent with the issue as context, in a new session or this one.
+   * one), in a new worktree or this checkout (with what to do with uncommitted changes), and the agent with the issue as
+   * context, in a new session or this one.
    */
   const startIssue = async (cwd: string, issue: { number: number; title: string; repo?: string }) => {
-    const [overview, branches] = await Promise.all([attempt(() => git.overview({ cwd })), git.branches({ cwd }).catch(() => [])])
+    const session = ctx.sessions.current()
+    const [overview, branches, project] = await Promise.all([
+      attempt(() => git.overview({ cwd })),
+      git.branches({ cwd }).catch(() => []),
+      // The project worktrees are made for; a server that cannot tell offers this checkout only.
+      session?.server.client.location.get({ location: { directory: session.directory } }).then(
+        (info) => info.project,
+        () => undefined,
+      ),
+    ])
     if (!overview) return
     const repo = issue.repo ?? repoOf(overview)
     if (!repo) {
       ctx.toast.show({ variant: "error", title: ctx.t("toast.noRepo") })
       return
     }
-    const locals = branches.filter((branch) => !branch.remote).map((branch) => branch.name)
-    const existing = [overview.branch ?? "", ...locals].find((name) => name && linkedIssue(repo, name) === issue.number)
+    const locals = branches.filter((branch) => !branch.remote)
+    const existing = [overview.branch ?? "", ...locals.map((branch) => branch.name)].find((name) => name && linkedIssue(repo, name) === issue.number)
     ctx.dialogs.open((dialog) => (
       <StartWork
         ctx={ctx}
@@ -286,13 +306,119 @@ export function createActions(ctx: SetupContext<typeof definition>) {
         overview={overview}
         name={existing ?? issueBranchName(issue.number, issue.title)}
         locals={locals}
+        worktrees={!!project}
         onStart={async (input) => {
-          const done = await startWork(cwd, { ...issue, repo }, overview, locals, input)
-          if (done) dialog.close()
-          return done
+          // The dialog closes at once; the branch, worktree and session follow in the background, shown in a toast.
+          dialog.close()
+          void beginWork(cwd, { ...issue, repo }, overview, locals, project, input)
+          return true
         }}
       />
     ))
+  }
+
+  const starting = new Set<string>()
+
+  const beginWork = async (
+    cwd: string,
+    issue: { number: number; title: string; repo: string },
+    overview: Overview,
+    locals: readonly Branch[],
+    project: { id: string; canonical: string } | undefined,
+    input: StartInput,
+  ) => {
+    const key = `${issue.repo}#${issue.number}`
+    if (starting.has(key)) return
+    starting.add(key)
+    const toast = ctx.toast.show({
+      variant: "loading",
+      persistent: true,
+      title: ctx.t("start.running", { number: issue.number }),
+      description: ctx.t(`start.running.${input.where === "worktree" ? "worktree" : "here"}${input.agent === "none" ? "" : "Agent"}`, { name: input.name }),
+    })
+    const work =
+      input.where === "worktree"
+        ? startInWorktree(cwd, issue, overview, locals, project, input)
+        : startWork(
+            cwd,
+            issue,
+            overview,
+            locals.map((branch) => branch.name),
+            input,
+          )
+    await work.catch((error: unknown) =>
+      ctx.toast.show({ variant: "error", title: ctx.t("toast.error"), description: errorMessage(error), duration: 10_000 }),
+    )
+    toast.dismiss()
+    starting.delete(key)
+  }
+
+  /** Starts work in a worktree of its own: a new one for the branch, or the one it is checked out in already. */
+  const startInWorktree = async (
+    cwd: string,
+    issue: { number: number; title: string; repo: string },
+    overview: Overview,
+    locals: readonly Branch[],
+    project: { id: string; canonical: string } | undefined,
+    input: StartInput,
+  ) => {
+    const local = locals.find((branch) => branch.name === input.name)
+    const directory = local?.worktree ?? (project ? await addWorktree(cwd, overview, project, input.name, local ? null : input.base) : undefined)
+    if (directory === null) return true
+    if (!directory) return false
+    linkIssue(issue.repo, input.name, issue.number)
+    const title = ctx.t("session.title.issue", { number: issue.number, title: issue.title })
+    if (input.agent === "none") {
+      await launch({ directory, title })
+      return true
+    }
+    const context = await attempt(() => contextOf({ repo: issue.repo, number: issue.number }))
+    await launch({ directory, title, prompt: context ? withContext(ctx.t("agent.prompt.start", { number: issue.number, title: issue.title }), context) : undefined })
+    return true
+  }
+
+  /**
+   * A new worktree with the branch checked out: an existing branch (`base` null), or a new one from the latest default
+   * branch or the current one. The server makes it detached, at the start point; the branch is switched to inside it.
+   * Resolves to its folder; undefined when it could not be made, null when it was made but the branch was not.
+   */
+  const addWorktree = async (
+    cwd: string,
+    overview: Overview,
+    project: { id: string; canonical: string },
+    name: string,
+    base: StartInput["base"] | null,
+  ) => {
+    const session = ctx.sessions.current()
+    if (!session) return undefined
+    const start = base === null ? name : base === "current" ? (overview.branch ?? overview.head) : await freshBase(cwd, overview)
+    const created = await progress(ctx.t("start.worktree.creating"), () =>
+      session.server.client.worktree.create({
+        projectID: project.id,
+        from: project.canonical,
+        name: name.replace(/[^\w.-]+/g, "-"),
+        ...(start ? { branch: start } : {}),
+      }),
+    )
+    if (!created) return undefined
+    const directory = created.directory
+    const switched = await (base === null
+      ? git.checkout({ cwd: directory, ref: name, track: null })
+      : git.createBranch({ cwd: directory, name, start: null, checkout: true })
+    ).then(
+      () => true,
+      (error: unknown) => {
+        ctx.toast.show({
+          variant: "error",
+          title: ctx.t("start.worktree.branchFailed", { name }),
+          description: `${ctx.t("start.worktree.kept", { directory })}\n${errorMessage(error)}`,
+          duration: 20_000,
+          actions: [{ label: ctx.t("launch.open"), run: () => void openDirectory(directory, name) }],
+        })
+        return false
+      },
+    )
+    return switched ? directory : null
   }
 
   const startWork = async (
@@ -322,7 +448,7 @@ export function createActions(ctx: SetupContext<typeof definition>) {
     const context = await attempt(() => contextOf({ repo: issue.repo, number: issue.number }))
     if (!context) return true
     const prompt = ctx.t("agent.prompt.start", { number: issue.number, title: issue.title })
-    if (input.agent === "session") startSession(context, prompt)
+    if (input.agent === "session") await startSession(context, prompt, ctx.t("session.title.issue", { number: issue.number, title: issue.title }))
     if (input.agent === "chat") attach(context, prompt)
     return true
   }
@@ -359,8 +485,61 @@ export function createActions(ctx: SetupContext<typeof definition>) {
     // A default branch just made from the remote's copy is current already.
     if (!target.remote && overview.remote) await attempt(() => git.pull({ cwd }))
     const tip = branches.find((item) => !item.remote && item.name === branch)?.sha
-    const merged = !!tip && !!pr.sha?.startsWith(tip)
-    const deleted = await git.deleteBranch({ cwd, name: branch, force: merged }).then(
+    if (!(await dropMerged(cwd, branch, tip, pr))) return
+    const repo = repoOf(overview)
+    if (repo) linkIssue(repo, branch, undefined)
+    ctx.toast.show({ variant: "success", title: ctx.t("finish.done", { base, branch }) })
+  }
+
+  /**
+   * After the pull request of a branch checked out in a worktree merged: removes the worktree (the session's folder),
+   * then deletes the branch from the project root. Removing a worktree with local changes asks again.
+   */
+  const finishWorktree = async (cwd: string, overview: Overview, pr: Pick<PullRequest, "number" | "sha">, root: string) => {
+    const branch = overview.branch
+    const session = ctx.sessions.current()
+    if (!branch || !session) return
+    const ok = await ctx.dialogs.confirm({
+      title: ctx.t("finish.worktree.title", { branch }),
+      description: ctx.t("finish.worktree.description", { number: pr.number, directory: cwd }),
+      confirm: ctx.t("finish.worktree.confirm"),
+    })
+    if (!ok) return
+    const client = session.server.client
+    const project = await attempt(() => client.location.get({ location: { directory: root } }).then((info) => info.project))
+    if (!project) return
+    const remove = (force: boolean) => client.worktree.remove({ projectID: project.id, directory: cwd, force })
+    const removed = await remove(false).then(
+      () => true,
+      async (error: unknown) => {
+        if (!/modified or untracked|--force/i.test(errorMessage(error))) {
+          ctx.toast.show({ variant: "error", title: ctx.t("finish.worktree.failed"), description: errorMessage(error), duration: 10_000 })
+          return false
+        }
+        const force = await ctx.dialogs.confirm({
+          title: ctx.t("finish.worktree.forceTitle"),
+          description: ctx.t("finish.worktree.forceDescription", { directory: cwd }),
+          confirm: ctx.t("finish.worktree.forceConfirm"),
+          danger: true,
+        })
+        return force && (await attempt(() => remove(true))) !== undefined
+      },
+    )
+    if (!removed) return
+    const tip = (await git.branches({ cwd: root }).catch(() => [])).find((item) => !item.remote && item.name === branch)?.sha
+    const open = [{ label: ctx.t("finish.worktree.openRoot"), run: () => void openDirectory(root, folderOf(root)) }]
+    if (!(await dropMerged(root, branch, tip, pr))) {
+      ctx.toast.show({ title: ctx.t("finish.worktree.removed"), actions: open })
+      return
+    }
+    const repo = repoOf(overview)
+    if (repo) linkIssue(repo, branch, undefined)
+    ctx.toast.show({ variant: "success", title: ctx.t("finish.worktree.done", { branch }), actions: open })
+  }
+
+  /** Deletes a branch whose pull request merged: without asking when it is exactly what merged, else after a warning. */
+  const dropMerged = (cwd: string, branch: string, tip: string | undefined, pr: Pick<PullRequest, "number" | "sha">) =>
+    git.deleteBranch({ cwd, name: branch, force: !!tip && !!pr.sha?.startsWith(tip) }).then(
       () => true,
       async (error: unknown) => {
         if (!/not fully merged/i.test(errorMessage(error))) {
@@ -376,11 +555,6 @@ export function createActions(ctx: SetupContext<typeof definition>) {
         return force && (await attempt(() => git.deleteBranch({ cwd, name: branch, force: true }))) !== undefined
       },
     )
-    if (!deleted) return
-    const repo = repoOf(overview)
-    if (repo) linkIssue(repo, branch, undefined)
-    ctx.toast.show({ variant: "success", title: ctx.t("finish.done", { base, branch }) })
-  }
 
   /** Quotes context into the routed session's next prompt; with a prompt, fills an empty composer with it too. */
   const attach = (context: ChatContext, prompt?: string) => {
@@ -401,18 +575,77 @@ export function createActions(ctx: SetupContext<typeof definition>) {
     return true
   }
 
-  /** Opens a new draft session in the same project, with the context written into its prompt for review. */
-  const startSession = (context: ChatContext, prompt: string) => {
+  /** Starts the agent in a new session in the same folder, with the context written into its first prompt. */
+  const startSession = async (context: ChatContext, prompt: string, title: string) => {
     const session = ctx.sessions.current()
     if (!session) {
       ctx.toast.show({ variant: "error", title: ctx.t("toast.noComposer") })
       return
     }
-    ctx.layout.draft({
-      server: session.server.id,
-      directory: session.directory,
-      prompt: `${prompt}\n\n<context source="${context.subject.replaceAll('"', "'")}">\n${context.text}\n</context>`,
-    })
+    await launch({ directory: session.directory, title, prompt: withContext(prompt, context) })
+  }
+
+  /**
+   * Starts a session on the routed session's server in `directory`, with the composer's model. A prompt is sent at
+   * once, so the agent works without the user opening the tab; `before` runs first, once the session exists. The tab
+   * opens in the background, with a toast to show it, unless `focus`. When the server cannot create the session, the
+   * prompt opens as a draft to send instead. Resolves to the session's id, undefined when there is none.
+   */
+  const launch = async (input: {
+    directory: string
+    title: string
+    prompt?: string
+    focus?: boolean
+    before?: (sessionID: string) => Promise<unknown>
+  }): Promise<{ id: string; sent: boolean } | undefined> => {
+    const session = ctx.sessions.current()
+    if (!session) {
+      ctx.toast.show({ variant: "error", title: ctx.t("toast.noComposer") })
+      return undefined
+    }
+    const server = session.server
+    const model = ctx.screen.current()?.composer.model()
+    const title = sessionTitle(input.title)
+    const created = await server.client.session
+      .create({
+        title,
+        location: { directory: input.directory },
+        ...(model ? { model: { id: model.modelID, providerID: model.providerID, ...(model.variant ? { variant: model.variant } : {}) } } : {}),
+      })
+      .then(
+        (info) => ({ id: info.id, error: undefined }),
+        (error: unknown) => ({ id: undefined, error: errorMessage(error) }),
+      )
+    const prompt = input.prompt
+    if (!created.id) {
+      if (prompt) ctx.layout.draft({ server: server.id, directory: input.directory, prompt })
+      ctx.toast.show({ variant: "error", title: ctx.t(prompt ? "launch.draft" : "launch.failed"), description: created.error, duration: 10_000 })
+      return undefined
+    }
+    const id = created.id
+    const failure =
+      prompt === undefined
+        ? undefined
+        : await Promise.resolve(input.before?.(id))
+            .then(() => server.client.session.prompt({ sessionID: id, text: prompt }))
+            .then(
+              () => undefined,
+              (error: unknown) => errorMessage(error),
+            )
+    ctx.tabs.open({ server: server.id, id }, { focus: input.focus ?? false })
+    const open = input.focus ? [] : [{ label: ctx.t("launch.open"), run: () => ctx.tabs.open({ server: server.id, id }, { focus: true }) }]
+    if (failure !== undefined) ctx.toast.show({ variant: "error", title: ctx.t("launch.unsent", { title }), description: failure, duration: 15_000, actions: open })
+    if (failure === undefined && !input.focus)
+      ctx.toast.show({ variant: "success", title: ctx.t(prompt === undefined ? "launch.opened" : "launch.started", { title }), duration: 8000, actions: open })
+    return { id, sent: prompt !== undefined && failure === undefined }
+  }
+
+  /** Shows a session in `directory`: an open tab's that is there already, else a new idle one. */
+  const openDirectory = async (directory: string, title: string) => {
+    const server = ctx.sessions.current()?.server.id
+    const open = ctx.sessions.list().find((item) => item.server.id === server && item.location?.directory === directory)
+    if (open) return ctx.tabs.focus(open.tab)
+    await launch({ directory, title, focus: true })
   }
 
   /** An issue or pull request with what the agent needs: comments, and for a PR its reviews and changed files. */
@@ -445,7 +678,14 @@ export function createActions(ctx: SetupContext<typeof definition>) {
     asking.delete(label)
     if (!context) return
     const prompt = preset ? ctx.t(`agent.prompt.${preset}`, { ref: label }) : undefined
-    if (mode === "session") return startSession(context, prompt ?? ctx.t("agent.prompt.look", { ref: label }))
+    if (mode === "session") {
+      // contextOf read the item through the cache.
+      const item = queries.client.getQueryData<Item>(queries.keys.item(ref))
+      const title = item
+        ? ctx.t(item.kind === "pr" ? "session.title.review" : "session.title.issue", { number: item.number, title: item.title })
+        : label
+      return startSession(context, prompt ?? ctx.t("agent.prompt.look", { ref: label }), title)
+    }
     attach(context, prompt)
   }
 
@@ -554,9 +794,12 @@ export function createActions(ctx: SetupContext<typeof definition>) {
     startIssue,
     linkedIssue,
     finishBranch,
+    finishWorktree,
     addToChat,
     attach,
     startSession,
+    launch,
+    openDirectory,
     ask,
     agentMenu,
     setItemState,
@@ -668,6 +911,7 @@ function CreatePullRequest(props: {
 interface StartInput {
   readonly name: string
   readonly base: "default" | "current"
+  readonly where: "worktree" | "here"
   readonly stash: boolean
   readonly agent: "session" | "chat" | "none"
 }
@@ -677,19 +921,27 @@ function StartWork(props: {
   issue: { number: number; title: string }
   overview: Overview
   name: string
-  locals: readonly string[]
+  locals: readonly Branch[]
+  /** The server can make worktrees of this repository. */
+  worktrees: boolean
   onStart: (input: StartInput) => Promise<boolean>
 }) {
   const ui = props.ctx.ui
   const t = props.ctx.t
   const [name, setName] = createSignal(props.name)
   const [base, setBase] = createSignal<StartInput["base"]>("default")
+  const [place, setPlace] = createSignal<StartInput["where"]>(props.worktrees ? "worktree" : "here")
   const [changes, setChanges] = createSignal<"carry" | "stash">("carry")
   const [agent, setAgent] = createSignal<StartInput["agent"]>("session")
   const [busy, setBusy] = createSignal(false)
   const trimmed = () => name().trim().replace(/\s+/g, "-")
   const current = () => trimmed() === props.overview.branch
-  const exists = () => !current() && props.locals.includes(trimmed())
+  const local = () => (current() ? undefined : props.locals.find((branch) => branch.name === trimmed()))
+  const exists = () => !!local()
+  // A branch checked out in another worktree cannot be checked out here; the work goes on there.
+  const elsewhere = () => local()?.worktree
+  const where = (): StartInput["where"] => (elsewhere() ? "worktree" : current() || !props.worktrees ? "here" : place())
+  const chosen = (): StartInput["agent"] => (where() === "worktree" && agent() === "chat" ? "session" : agent())
   const dirty = () => props.overview.files.length
   const remoteBase = () => {
     const remote = props.overview.remote?.name
@@ -701,7 +953,13 @@ function StartWork(props: {
   const submit = async () => {
     if (!trimmed() || busy()) return
     setBusy(true)
-    await props.onStart({ name: trimmed(), base: remoteBase() ? base() : "current", stash: !current() && dirty() > 0 && changes() === "stash", agent: agent() })
+    await props.onStart({
+      name: trimmed(),
+      base: remoteBase() ? base() : "current",
+      where: where(),
+      stash: where() === "here" && !current() && dirty() > 0 && changes() === "stash",
+      agent: chosen(),
+    })
     setBusy(false)
   }
 
@@ -723,9 +981,29 @@ function StartWork(props: {
           <span class="ghp-field-label">{t("start.branch")}</span>
           <ui.TextInput label={t("start.branch")} value={name()} autofocus onInput={setName} onSubmit={() => void submit()} />
           <Show when={current() || exists()}>
-            <span class="ghp-start-note">{t(current() ? "start.current" : "start.existing", { name: trimmed() })}</span>
+            <span class="ghp-start-note" title={elsewhere()}>
+              {elsewhere()
+                ? t("start.elsewhere", { name: trimmed(), folder: folderOf(elsewhere() ?? "") })
+                : t(current() ? "start.current" : "start.existing", { name: trimmed() })}
+            </span>
           </Show>
         </div>
+        <Show when={props.worktrees && !current() && !elsewhere()}>
+          <div class="ghp-field">
+            <Choice
+              label={t("start.where")}
+              value={place()}
+              onChange={setPlace}
+              options={[
+                { value: "worktree", label: t("start.where.worktree") },
+                { value: "here", label: t("start.where.here") },
+              ]}
+            />
+            <Show when={place() === "worktree"}>
+              <span class="ghp-start-note">{t("start.where.worktreeNote")}</span>
+            </Show>
+          </div>
+        </Show>
         <Show when={!current() && !exists() && remoteBase()}>
           {(fresh) => (
             <Choice
@@ -739,7 +1017,7 @@ function StartWork(props: {
             />
           )}
         </Show>
-        <Show when={!current() && dirty() > 0}>
+        <Show when={where() === "here" && !current() && dirty() > 0}>
           <Choice
             label={props.ctx.plural("start.changes", dirty())}
             value={changes()}
@@ -750,16 +1028,31 @@ function StartWork(props: {
             ]}
           />
         </Show>
-        <Choice
-          label={t("start.agent")}
-          value={agent()}
-          onChange={setAgent}
-          options={[
-            { value: "session", label: t("start.agent.session") },
-            { value: "chat", label: t("start.agent.chat") },
-            { value: "none", label: t("start.agent.none") },
-          ]}
-        />
+        <Show
+          when={where() === "worktree"}
+          fallback={
+            <Choice
+              label={t("start.agent")}
+              value={agent()}
+              onChange={setAgent}
+              options={[
+                { value: "session", label: t("start.agent.session") },
+                { value: "chat", label: t("start.agent.chat") },
+                { value: "none", label: t("start.agent.none") },
+              ]}
+            />
+          }
+        >
+          <Choice
+            label={t("start.agent")}
+            value={chosen()}
+            onChange={setAgent}
+            options={[
+              { value: "session", label: t("start.agent.worktree") },
+              { value: "none", label: t(elsewhere() ? "start.agent.openWorktree" : "start.agent.createWorktree") },
+            ]}
+          />
+        </Show>
       </div>
     </ui.Dialog>
   )

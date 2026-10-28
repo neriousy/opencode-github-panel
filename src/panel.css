@@ -964,6 +964,16 @@
   max-width: 50%;
 }
 
+.ghp-pick-worktree {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ghp-pick-subject {
   flex: 1;
   color: var(--v2-text-text-faint);

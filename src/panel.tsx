@@ -648,11 +648,25 @@ function BranchStrip(props: { state: State }) {
   }
   const unpushed = () => (ov().upstream ? ov().ahead : (s.outgoing()?.unpushed.length ?? 0))
   const push = () => void s.run("push", () => s.actions.push(s.cwd()))
+  // The project root, when this session works in another worktree of it.
+  const worktreeRoot = () => {
+    const root = s.session.project?.worktree
+    const same = (a: string, b: string) => a.replace(/[\\/]+$/, "").replaceAll("\\", "/") === b.replace(/[\\/]+$/, "").replaceAll("\\", "/")
+    return root && !s.session.local && !same(ov().root, root) ? root : undefined
+  }
 
   const next = (): { label: string; icon: "cloud-upload" | "eye" | "fork" | "branch"; busy: string; run: () => void } | undefined => {
     const current = pr()
     if (!current) return undefined
     // Commits a squash merge left behind count as unpushed; the work is done either way.
+    const root = worktreeRoot()
+    if (current.state === "MERGED" && root)
+      return {
+        label: t("strip.finishWorktree"),
+        icon: "branch",
+        busy: "finish",
+        run: () => void s.run("finish", () => s.actions.finishWorktree(s.cwd(), ov(), current, root)),
+      }
     if (current.state === "MERGED" && ov().defaultBranch)
       return {
         label: t("strip.finish", { base: ov().defaultBranch ?? "" }),

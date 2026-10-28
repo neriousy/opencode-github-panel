@@ -5,7 +5,7 @@ import { homedir } from "node:os"
 import { basename, delimiter, join } from "node:path"
 import type { events, Issues, Item, methods, Overview, PullRequest, Pulls } from "./schemas"
 import { apiPath, createGitHub, remember } from "./github"
-import { BRANCH_FORMAT, LOG_FORMAT, parseBranches, parseIssues, parseItem, parseLog, parseRemote, parseStatus, FIELD } from "./git"
+import { BRANCH_FORMAT, LOG_FORMAT, parseBranches, parseIssues, parseItem, parseLog, parseRemote, parseStatus, parseWorktrees, FIELD } from "./git"
 
 const ISSUE_FIELDS = "number,title,state,url,author,labels,assignees,updatedAt"
 const ITEM_FIELDS = "number,title,state,url,author,labels,assignees,updatedAt,createdAt,body,comments,milestone"
@@ -432,10 +432,13 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
         files: changed,
       }
     },
-    branches: async ({ cwd }, caller) =>
-      parseBranches(
-        await git(cwd, ["for-each-ref", "--sort=-committerdate", `--format=${BRANCH_FORMAT}`, "refs/heads", "refs/remotes"], caller.signal),
-      ),
+    branches: async ({ cwd }, caller) => {
+      const [refs, worktrees] = await Promise.all([
+        git(cwd, ["for-each-ref", "--sort=-committerdate", `--format=${BRANCH_FORMAT}`, "refs/heads", "refs/remotes"], caller.signal),
+        probe(cwd, ["worktree", "list", "--porcelain"], caller.signal),
+      ])
+      return parseBranches(refs, parseWorktrees(worktrees))
+    },
     pulls: ({ cwd, fresh }) => {
       const cached = pulls.get(cwd)
       if (!fresh && cached && Date.now() - cached.time < PULL_TTL) return cached.value

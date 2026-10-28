@@ -105,7 +105,7 @@ export function RunView(props: { repo: string; id: number; actions: Actions }) {
     { label: t("action.addToChat"), icon: "bubble-5", onSelect: () => context() && props.actions.attach(context()!) },
     { label: t("agent.preset.job"), icon: "brain", onSelect: () => context() && props.actions.attach(context()!, t("agent.prompt.job")) },
     { type: "separator" },
-    { label: t("agent.newSession"), icon: "new-session", onSelect: () => context() && props.actions.startSession(context()!, t("agent.prompt.job")) },
+    { label: t("agent.newSession"), icon: "new-session", onSelect: () => context() && void props.actions.startSession(context()!, t("agent.prompt.job"), t("session.title.job", { name: job()?.name ?? "" })) },
   ]
 
   return (

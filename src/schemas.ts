@@ -77,6 +77,8 @@ export const Branch = Schema.Struct({
   sha: Schema.String,
   date: Schema.Number,
   subject: Schema.String,
+  /** The folder of another worktree this local branch is checked out in; git refuses to check it out here or delete it. */
+  worktree: Schema.optional(Schema.String),
 })
 export type Branch = typeof Branch.Type
 

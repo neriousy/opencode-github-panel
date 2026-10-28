@@ -136,6 +136,9 @@ export const en = {
   "picker.section.remote": "Remote",
   "picker.showRemote": "Show {{count}} remote branches",
   "picker.hideRemote": "Hide remote branches",
+  "picker.worktreeTitle": "Checked out in the worktree {{directory}}",
+  "picker.openWorktree": "Open session there",
+  "picker.deleteInWorktree": "Delete (checked out in a worktree)",
 
   "cleanup.open": "Clean up…",
   "cleanup.title": "Clean up branches",

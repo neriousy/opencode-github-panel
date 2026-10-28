@@ -1,6 +1,6 @@
 import { createMemo, createSignal, For, Show } from "solid-js"
 import { createKeyed, type Context, type DialogHandle, type UiMenuEntry } from "@opencode/plugin/gui"
-import { errorMessage, pullFor, type Actions } from "./actions"
+import { errorMessage, folderOf, pullFor, type Actions } from "./actions"
 import { cleanupCandidates, type CleanupCandidate, type CleanupReason } from "./cleanup"
 import type { Branch } from "./contract"
 import { ago, PrChip } from "./panel"
@@ -74,6 +74,13 @@ function BranchPicker(props: { ctx: Context; actions: Actions; cwd: string; dial
   }
   const checkout = (branch: Branch) => {
     if (branch.current) return
+    // Checked out in another worktree: git refuses to check it out here, so its folder opens instead.
+    const worktree = branch.worktree
+    if (worktree) {
+      props.dialog.close()
+      void props.actions.openDirectory(worktree, branch.name)
+      return
+    }
     void run(
       "checkout",
       () =>
@@ -99,7 +106,9 @@ function BranchPicker(props: { ctx: Context; actions: Actions; cwd: string; dial
     const pr = prFor(shortName(branch))
     const disabled = !!busy()
     return [
-      { label: t("action.checkout"), icon: "enter", disabled: branch.current || disabled, onSelect: () => checkout(branch) },
+      branch.worktree
+        ? { label: t("picker.openWorktree"), icon: "new-session", onSelect: () => checkout(branch) }
+        : { label: t("action.checkout"), icon: "enter", disabled: branch.current || disabled, onSelect: () => checkout(branch) },
       {
         label: t("action.branchFrom"),
         icon: "branch-out",
@@ -169,9 +178,9 @@ function BranchPicker(props: { ctx: Context; actions: Actions; cwd: string; dial
             onSelect: () => void run("delete", () => props.actions.deleteRemoteBranch(root(), branch.name)),
           }
         : {
-            label: t("action.delete"),
+            label: t(branch.worktree ? "picker.deleteInWorktree" : "action.delete"),
             icon: "outline-trash",
-            disabled: branch.current || disabled,
+            disabled: branch.current || !!branch.worktree || disabled,
             onSelect: () => void run("delete", () => props.actions.deleteBranch(root(), branch.name)),
           },
     ]
@@ -306,13 +315,30 @@ function PickerRow(props: {
       <Show when={props.branch.gone}>
         <span class="ghp-pill">{t("branches.gone")}</span>
       </Show>
+      <Show when={props.branch.worktree}>
+        {(directory) => (
+          <ui.Tooltip value={t("picker.worktreeTitle", { directory: directory() })}>
+            <span class="ghp-pill ghp-pick-worktree">
+              <ui.Icon name="folder" size="small" />
+              {folderOf(directory())}
+            </span>
+          </ui.Tooltip>
+        )}
+      </Show>
       <Show when={props.pr}>{(pr) => <PrChip ctx={props.ctx} pr={pr()} onOpen={props.onOpenPr} />}</Show>
       <span class="ghp-pick-subject ghp-ellipsis">{props.branch.subject}</span>
       <span class="ghp-pick-age">{ago(props.branch.date)}</span>
       <div class="ghp-row-actions" onClick={(event) => event.stopPropagation()}>
         <Show when={!props.branch.current}>
-          <ui.Tooltip value={t("action.checkout")}>
-            <ui.IconButton icon="enter" label={t("action.checkout")} size="small" variant="ghost" disabled={props.busy} onClick={props.onCheckout} />
+          <ui.Tooltip value={t(props.branch.worktree ? "picker.openWorktree" : "action.checkout")}>
+            <ui.IconButton
+              icon={props.branch.worktree ? "new-session" : "enter"}
+              label={t(props.branch.worktree ? "picker.openWorktree" : "action.checkout")}
+              size="small"
+              variant="ghost"
+              disabled={props.busy}
+              onClick={props.onCheckout}
+            />
           </ui.Tooltip>
         </Show>
         <ui.Menu label={t("action.more")} trigger="icon" icon="outline-dots" placement="bottom-end" items={props.items} />

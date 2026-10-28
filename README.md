@@ -11,8 +11,10 @@ fetch, workflow runs and open on GitHub). Branch details appear only on the two 
   checks, review state and the next step (Push, Ready for review, Merge), or "No pull request · N ahead" with Create PR.
 - **Branch picker**: searchable, with current, recent, branches with an open pull request, local and remote branches,
   each with ahead/behind, its pull request and last commit; checkout, merge into current, rebase onto, push, delete and
-  more. **Clean up…** lists branches whose pull request was merged or closed, whose upstream is gone, or that are merged
-  into the default branch, with the reason for each; branches with unpushed work start unchecked.
+  more. A branch checked out in another worktree shows that worktree's folder, and opens a session there instead of
+  checking out. **Clean up…** lists branches whose pull request was merged or closed, whose upstream is gone, or that
+  are merged into the default branch, with the reason for each; branches with unpushed work start unchecked, and
+  branches checked out in a worktree are left out.
 - **Changes**: staged, unstaged and conflicted files with inline diffs; stage, unstage and discard per file or all at
   once; commit, commit all, commit & push, amend (⌘⏎ commits; amending a pushed commit asks first). **Unpushed
   commits** lists what is not on the remote yet, with Push, Amend and Undo last commit.
@@ -66,10 +68,18 @@ fetch, workflow runs and open on GitHub). Branch details appear only on the two 
   (the checklist button in the top bar; keys y, n, e, a, u, o, j/k), a banner on the issue or pull request tab, and a mark
   on list rows. The `actions` tool can wait (`wait: true`) until the user has decided, and reports the user's edits as
   "you proposed X; the user changed it to Y".
-- **Start working on an issue**: one dialog creates the branch (`123-slug`, from the freshly fetched default branch),
-  stashes or carries your changes, and starts the agent with the issue. The branch strip then shows the issue, the PR
-  and, once merged, "Issue closed" with Switch to the default branch and delete the branch. Create PR fills in the title,
-  your PR template and "Fixes #N". Issue tabs list their linked branches and pull requests.
+- **Start working on an issue**: one dialog creates the branch (`123-slug`, from the freshly fetched default branch or
+  the current one) and starts the agent with the issue. **Where**: a **new worktree** (the default; a separate folder
+  made by the OpenCode server, so this checkout and its changes stay as they are) or **this checkout** (switch here,
+  stashing or carrying your changes). A branch already checked out in another worktree is worked on there. The agent
+  starts at once in a new session, in a background tab, with a toast to open it; in this checkout it can also go into
+  this session's chat. The branch strip then shows the issue, the PR and, once merged, "Issue closed" with Switch to the
+  default branch and delete the branch, or, in a worktree, Remove worktree & delete branch. Create PR fills in the
+  title, your PR template and "Fixes #N". Issue tabs list their linked branches (with Open for one in a worktree) and
+  pull requests.
+- **Agent sessions start at once**: "Work on it in a new session", "Pre-review with agent", a CI job's new session and
+  Start working create the session with the composer's model and send its first prompt, then open it in a background
+  tab. Servers that cannot create sessions get a draft with the prompt instead.
 - **Review mode**: "Pre-review with agent" on a pull request starts a session that reads the diff (`diff` tool) and
   drafts a review (`review` tool): a summary, a suggested verdict and inline comments, checked against the diff. Nothing
   reaches GitHub until you submit: the draft shows as a banner, inline draft comments you can edit or delete (add your

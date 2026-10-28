@@ -64,6 +64,17 @@ describe("cleanupCandidates", () => {
     ])
   })
 
+  test("leaves out branches checked out in another worktree", () => {
+    const candidates = cleanupCandidates({
+      branches: [branch("elsewhere", { gone: true, worktree: "/data/worktree/abc/elsewhere" }), branch("here", { gone: true })],
+      current: null,
+      base: "main",
+      merged: [],
+      pullFor: () => undefined,
+    })
+    expect(candidates.map((candidate) => candidate.name)).toEqual(["here"])
+  })
+
   test("flags unpushed commits on a branch whose pull request is done", () => {
     const candidates = cleanupCandidates({
       branches: [branch("later", { ahead: 1 })],

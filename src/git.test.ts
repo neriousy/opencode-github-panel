@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { layout } from "./graph"
-import { parseBranches, parseDecorations, parseLog, parseRemote, parseStatus } from "./git"
+import { parseBranches, parseDecorations, parseLog, parseRemote, parseStatus, parseWorktrees } from "./git"
 
 describe("parseStatus", () => {
   test("reads branch headers, renames, conflicts and untracked files", () => {
@@ -72,6 +72,52 @@ test("parseBranches", () => {
     ["old", false, false, 0, 0, true],
     ["origin/main", true, false, 0, 0, false],
   ])
+})
+
+test("parseWorktrees and the worktree of each branch", () => {
+  const porcelain = [
+    "worktree /repo",
+    "HEAD 1111111111111111111111111111111111111111",
+    "branch refs/heads/main",
+    "",
+    "worktree /data/worktree/abc/12-fix login",
+    "HEAD 2222222222222222222222222222222222222222",
+    "branch refs/heads/12-fix-login",
+    "locked",
+    "",
+    "worktree /data/worktree/abc/detached",
+    "HEAD 3333333333333333333333333333333333333333",
+    "detached",
+    "",
+    "worktree /data/worktree/abc/gone",
+    "HEAD 4444444444444444444444444444444444444444",
+    "branch refs/heads/feature/gone",
+    "prunable gitdir file points to non-existent location",
+    "",
+    "worktree /bare.git",
+    "bare",
+    "",
+  ].join("\n")
+  const worktrees = parseWorktrees(porcelain)
+  expect([...worktrees]).toEqual([
+    ["main", "/repo"],
+    ["12-fix-login", "/data/worktree/abc/12-fix login"],
+  ])
+  const refs = [
+    "refs/heads/12-fix-login\x1fabc\x1f\x1f\x1f100\x1fFix\x1f ",
+    "refs/heads/main\x1fdef\x1f\x1f\x1f90\x1fMain\x1f*",
+    "refs/heads/feature/gone\x1fdef\x1f\x1f\x1f90\x1fGone\x1f ",
+    "refs/remotes/origin/12-fix-login\x1fabc\x1f\x1f\x1f100\x1fFix\x1f ",
+  ].join("\n")
+  // The current checkout's branch never points at a worktree, even when its own folder is listed.
+  expect(parseBranches(refs, worktrees).map((branch) => [branch.name, branch.worktree])).toEqual([
+    ["12-fix-login", "/data/worktree/abc/12-fix login"],
+    ["main", undefined],
+    ["feature/gone", undefined],
+    ["origin/12-fix-login", undefined],
+  ])
+  expect("worktree" in (parseBranches(refs, worktrees)[1] ?? {})).toBe(false)
+  expect(parseWorktrees("")).toEqual(new Map())
 })
 
 test("parseRemote", () => {

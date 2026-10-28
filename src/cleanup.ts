@@ -18,7 +18,8 @@ export interface CleanupCandidate {
 
 /**
  * Local branches that look done with: their pull request is merged or closed, their upstream was deleted, or they are
- * merged into the default branch. Never the current or the default branch, nor one with an open pull request.
+ * merged into the default branch. Never the current or the default branch, one with an open pull request, nor one
+ * checked out in another worktree (git refuses to delete it; removing the worktree comes first).
  */
 export function cleanupCandidates(input: {
   readonly branches: readonly Branch[]
@@ -28,7 +29,7 @@ export function cleanupCandidates(input: {
   readonly pullFor: (name: string) => PullRequest | undefined
 }): CleanupCandidate[] {
   return input.branches.flatMap((branch): CleanupCandidate[] => {
-    if (branch.remote || branch.current || branch.name === input.current || branch.name === input.base) return []
+    if (branch.remote || branch.current || branch.worktree || branch.name === input.current || branch.name === input.base) return []
     const pr = input.pullFor(branch.name)
     if (pr?.state === "OPEN") return []
     const merged = input.merged.includes(branch.name)

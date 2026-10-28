@@ -648,28 +648,14 @@ async function startTriage(s: State, start: TriageStart) {
     ctx.toast.show({ variant: "error", title: t("toast.noComposer") })
     return false
   }
-  const text = triagePrompt(start)
-  const model = ctx.screen.current()?.composer.model()
-  const title = t("triage.sessionTitle", { what: start.query ?? ctx.plural(`triage.noun.${start.kind}`, start.total) })
-  const info = await session.server.client.session
-    .create({
-      title: title.length > 80 ? `${title.slice(0, 79)}…` : title,
-      location: { directory: session.directory },
-      ...(model ? { model: { id: model.modelID, providerID: model.providerID, ...(model.variant ? { variant: model.variant } : {}) } } : {}),
-    })
-    .catch(() => undefined)
-  if (!info) {
-    ctx.layout.draft({ server: session.server.id, directory: session.directory, prompt: text })
-    ctx.toast.show({ title: t("triage.draft") })
-    return true
-  }
-  const started = await s.actions.attempt(async () => {
-    await serverCall(ctx, "agentTriage", { sessionID: info.id, triage: start })
-    await session.server.client.session.prompt({ sessionID: info.id, text })
-    return true
+  const started = await s.actions.launch({
+    directory: session.directory,
+    title: t("triage.sessionTitle", { what: start.query ?? ctx.plural(`triage.noun.${start.kind}`, start.total) }),
+    prompt: triagePrompt(start),
+    focus: true,
+    before: (sessionID) => serverCall(ctx, "agentTriage", { sessionID, triage: start }),
   })
-  ctx.tabs.open({ server: session.server.id, id: info.id }, { focus: true })
-  if (started) showActivity(s, info.id)
+  if (started?.sent) showActivity(s, started.id)
   return true
 }
 
