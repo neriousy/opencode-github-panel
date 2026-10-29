@@ -1021,8 +1021,13 @@ function ItemRow(props: {
         actions?.querySelector("button")?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }))
       }}
     >
-      <span class="ghp-pr-state" data-state={props.item.kind === "issue" && props.item.state === "CLOSED" ? "MERGED" : state()}>
-        <Show when={props.item.kind === "pr"} fallback={<IssueIcon state={props.item.state} />}>
+      <span
+        class="ghp-pr-state"
+        data-state={props.item.kind === "issue" && props.item.state === "CLOSED" ? "MERGED" : state()}
+        data-reason={props.item.kind === "issue" && props.item.state === "CLOSED" ? props.item.reason : undefined}
+        title={props.item.kind === "issue" && props.item.state === "CLOSED" && props.item.reason ? t(`state.closed.${props.item.reason}`) : undefined}
+      >
+        <Show when={props.item.kind === "pr"} fallback={<IssueIcon state={props.item.state} reason={props.item.reason} />}>
           <PrIcon state={state()} />
         </Show>
         <button

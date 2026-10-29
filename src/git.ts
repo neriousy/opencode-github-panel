@@ -294,6 +294,7 @@ export function parseIssues(output: string): Issue[] {
 }
 
 interface GhItem extends GhIssue {
+  readonly stateReason?: string | null
   readonly body?: string
   readonly createdAt: string
   readonly isDraft?: boolean
@@ -329,6 +330,7 @@ export function parseItem(kind: Item["kind"], repo: string, output: string): Ite
     number: item.number,
     title: item.title,
     state: item.state === "MERGED" ? "MERGED" : item.state === "CLOSED" ? "CLOSED" : "OPEN",
+    ...(kind === "issue" && item.state === "CLOSED" ? { reason: stateReason(item.stateReason) } : {}),
     draft: item.isDraft === true,
     url: item.url,
     author: item.author?.login ?? "",
@@ -524,4 +526,11 @@ export function pullFor(
   const done = matching[0]
   if (!done || !tip || !done.sha) return done
   return done.sha === tip ? done : undefined
+}
+
+/** GitHub's state reason (NOT_PLANNED, DUPLICATE, COMPLETED or none) as the panel names it; none reads as completed. */
+export function stateReason(value: string | null | undefined): "completed" | "not_planned" | "duplicate" {
+  if (value === "NOT_PLANNED") return "not_planned"
+  if (value === "DUPLICATE") return "duplicate"
+  return "completed"
 }

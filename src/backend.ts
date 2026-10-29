@@ -298,7 +298,7 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
     const pr = kind === "pr"
     const view = (fields: string) => gh(home, [pr ? "pr" : "issue", "view", String(number), "--repo", repo, "--json", fields])
     // Older gh releases lack the closing-reference fields; the item reads without its links there.
-    const output = await view(pr ? `${PR_FIELDS},closingIssuesReferences` : `${ITEM_FIELDS},closedByPullRequestsReferences`).catch((error: unknown) => {
+    const output = await view(pr ? `${PR_FIELDS},closingIssuesReferences` : `${ITEM_FIELDS},stateReason,closedByPullRequestsReferences`).catch((error: unknown) => {
       if (error instanceof Error && /unknown json field/i.test(error.message)) return view(pr ? PR_FIELDS : ITEM_FIELDS)
       throw error
     })

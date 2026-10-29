@@ -18,6 +18,7 @@
   --ghp-merged: #8250df;
   --ghp-closed: var(--v2-state-fg-danger, #cf222e);
   --ghp-draft: var(--v2-text-text-faint);
+  --ghp-skipped: #6e7781;
 }
 
 .ghp {
@@ -1090,6 +1091,11 @@
   flex-shrink: 0;
   color: var(--ghp-open);
 
+  &[data-reason="not_planned"],
+  &[data-reason="duplicate"] {
+    color: var(--ghp-skipped) !important;
+  }
+
   &[data-state="MERGED"] {
     color: var(--ghp-merged);
   }
@@ -1376,6 +1382,12 @@
 
   &[data-state="CLOSED"][data-kind="issue"] {
     background: var(--ghp-merged);
+  }
+
+  /* Not planned or a duplicate: GitHub's gray, so it does not read as done. */
+  &[data-state="CLOSED"][data-kind="issue"][data-reason="not_planned"],
+  &[data-state="CLOSED"][data-kind="issue"][data-reason="duplicate"] {
+    background: var(--ghp-skipped);
   }
 
   &[data-state="DRAFT"] {

@@ -678,20 +678,23 @@ export function ItemCard(props: { ctx: Context; item: Item }) {
   )
 }
 
-export function StateChip(props: { ctx: Context; item: Pick<Item, "kind" | "state" | "draft"> }) {
+export function StateChip(props: { ctx: Context; item: Pick<Item, "kind" | "state" | "draft" | "reason"> }) {
   const state = () => (props.item.draft && props.item.state === "OPEN" ? "DRAFT" : props.item.state)
+  const reason = () => (props.item.kind === "issue" && props.item.state === "CLOSED" ? props.item.reason : undefined)
   const label = () => {
     if (state() === "DRAFT") return props.ctx.t("pulls.draft")
+    const why = reason()
+    if (why) return props.ctx.t(`state.closed.${why}`)
     return props.ctx.t(`pulls.state.${props.item.state}`)
   }
   return (
-    <span class="ghp-state" data-state={state()} data-kind={props.item.kind}>
+    <span class="ghp-state" data-state={state()} data-kind={props.item.kind} data-reason={reason()}>
       <Switch>
         <Match when={props.item.kind === "pr"}>
           <PrIcon state={state()} />
         </Match>
         <Match when={props.item.kind === "issue"}>
-          <IssueIcon state={props.item.state} />
+          <IssueIcon state={props.item.state} reason={reason()} />
         </Match>
       </Switch>
       {label()}
@@ -699,13 +702,22 @@ export function StateChip(props: { ctx: Context; item: Pick<Item, "kind" | "stat
   )
 }
 
-export function IssueIcon(props: { state: string }): JSX.Element {
+/** GitHub's issue icons: open, closed as completed (a check), closed otherwise (a slash: not planned or duplicate). */
+export function IssueIcon(props: { state: string; reason?: string }): JSX.Element {
+  const skipped = () => props.state === "CLOSED" && !!props.reason && props.reason !== "completed"
   return (
     <svg class="ghp-pr-icon" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
       <Show
         when={props.state === "OPEN"}
         fallback={
-          <path d="M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5ZM16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-1.5 0a6.5 6.5 0 1 0-13 0 6.5 6.5 0 0 0 13 0Z" />
+          <Show
+            when={skipped()}
+            fallback={
+              <path d="M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5ZM16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-1.5 0a6.5 6.5 0 1 0-13 0 6.5 6.5 0 0 0 13 0Z" />
+            }
+          >
+            <path d="M10.78 6.28a.75.75 0 0 0-1.06-1.06l-4.5 4.5a.75.75 0 1 0 1.06 1.06ZM16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-1.5 0a6.5 6.5 0 1 0-13 0 6.5 6.5 0 0 0 13 0Z" />
+          </Show>
         }
       >
         <path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" />

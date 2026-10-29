@@ -143,12 +143,17 @@ export const Check = Schema.Struct({
 export type Check = typeof Check.Type
 
 /** One issue or pull request with its conversation, read on demand for a detail tab or a hover card. */
+/** How a closed issue was closed, as GitHub records it. */
+const StateReason = Schema.Literals(["completed", "not_planned", "duplicate"])
+
 export const Item = Schema.Struct({
   kind: Schema.Literals(["issue", "pr"]),
   repo: Schema.String,
   number: Schema.Number,
   title: Schema.String,
   state: Schema.Literals(["OPEN", "CLOSED", "MERGED"]),
+  /** Why a closed issue was closed; absent for open issues, pull requests and older servers. */
+  reason: Schema.optional(StateReason),
   draft: Schema.Boolean,
   url: Schema.String,
   author: Schema.String,
@@ -306,6 +311,7 @@ export const SearchItem = Schema.Struct({
   number: Schema.Number,
   title: Schema.String,
   state: Schema.Literals(["OPEN", "CLOSED", "MERGED"]),
+  reason: Schema.optional(StateReason),
   draft: Schema.Boolean,
   url: Schema.String,
   author: Schema.String,

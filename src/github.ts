@@ -1,4 +1,5 @@
 import type { ChangedFile, Inbox, InboxEntry, Job, RemoteCommit, RepoMeta, Reviews, Run, RunDetails, SearchItem, SearchPage } from "./schemas"
+import { stateReason } from "./git"
 
 const META_TTL = 5 * 60_000
 const INBOX_TTL = 60_000
@@ -7,7 +8,7 @@ const LOG_LIMIT = 400_000
 
 const SEARCH_QUERY = `query($q:String!,$after:String,$first:Int!){search(query:$q,type:ISSUE,first:$first,after:$after){issueCount pageInfo{hasNextPage endCursor}
   nodes{__typename
-    ... on Issue{number title state url createdAt updatedAt author{login} comments{totalCount} labels(first:6){nodes{name color}} repository{nameWithOwner}}
+    ... on Issue{number title state stateReason url createdAt updatedAt author{login} comments{totalCount} labels(first:6){nodes{name color}} repository{nameWithOwner}}
     ... on PullRequest{number title state isDraft url createdAt updatedAt author{login} comments{totalCount} labels(first:6){nodes{name color}} repository{nameWithOwner}
       headRefName baseRefName reviewDecision}}}}`
 
@@ -188,6 +189,7 @@ export function createGitHub(deps: Deps) {
             number: node.number,
             title: node.title,
             state: node.state === "MERGED" ? "MERGED" : node.state === "CLOSED" ? "CLOSED" : "OPEN",
+            ...(!pr && node.state === "CLOSED" ? { reason: stateReason(node.stateReason) } : {}),
             draft: node.isDraft === true,
             url: node.url,
             author: node.author?.login ?? "ghost",
@@ -680,6 +682,7 @@ interface GqlSearch {
     number: number
     title: string
     state: string
+    stateReason?: string | null
     isDraft?: boolean
     url: string
     createdAt: string
