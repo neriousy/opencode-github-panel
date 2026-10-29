@@ -508,8 +508,15 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
     },
     comment: ({ repo, number, kind, body }) =>
       changeItem(repo, number, () => gh(home, [kind, "comment", String(number), "--repo", repo, "--body", body])),
-    setState: ({ repo, number, kind, open }) =>
-      changeItem(repo, number, () => gh(home, [kind, open ? "reopen" : "close", String(number), "--repo", repo])),
+    setState: ({ repo, number, kind, open, reason, duplicateOf, comment }) =>
+      changeItem(repo, number, async () => {
+        const note = comment?.trim()
+        if (!open && note) await gh(home, [kind, "comment", String(number), "--repo", repo, "--body", note])
+        if (!open) await github.closeItem(repo, number, kind, reason ?? "completed", duplicateOf)
+        if (open) await gh(home, [kind, "reopen", String(number), "--repo", repo])
+        if (open && note) await gh(home, [kind, "comment", String(number), "--repo", repo, "--body", note])
+        return ""
+      }),
     createIssue: async ({ cwd, title, body }) => {
       const repo = await remote(cwd)
       if (!repo) throw new Error("No GitHub remote found for this repository.")

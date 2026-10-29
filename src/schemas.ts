@@ -491,6 +491,11 @@ export const methods = {
       number: Schema.Number,
       kind: Schema.Literals(["issue", "pr"]),
       open: Schema.Boolean,
+      /** Why an issue closes; pull requests have none. Omitted: GitHub's default, completed. */
+      reason: Schema.optional(Schema.Literals(["completed", "not_planned", "duplicate"])),
+      duplicateOf: Schema.optional(Schema.Number),
+      /** Posted before closing, or after reopening. */
+      comment: Schema.optional(Schema.String),
     }),
     output: Output,
   },

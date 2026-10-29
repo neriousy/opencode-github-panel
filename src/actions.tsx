@@ -1,10 +1,12 @@
 import { createSignal, For, onMount, Show } from "solid-js"
-import type { Context, SetupContext, UiMenuEntry } from "@opencode/plugin/gui"
+import type { Context, SetupContext, UiMenuEntry, UiMenuItem } from "@opencode/plugin/gui"
 import { itemContext, sessionTitle, type Context as ChatContext } from "./context"
 import { tabId, type TabTarget } from "./tabs"
 import { createQueries } from "./queries"
 import { createTransport, type GitClient } from "./transport"
 import type { Branch, Item, ItemRef, Overview, PullRequest, Pulls } from "./contract"
+
+type CloseReason = "completed" | "not_planned" | "duplicate"
 import type { definition } from "./definition"
 import { issueBranchName, issueFromBranch, withClosing } from "./git"
 
@@ -713,17 +715,41 @@ export function createActions(ctx: SetupContext<typeof definition>) {
   /** Quotes an issue or pull request into the next prompt, so the agent reads it. */
   const addToChat = (item: Item) => void ask({ repo: item.repo, number: item.number }, undefined)
 
-  const setItemState = async (item: Item, open: boolean) => {
-    if (!open) {
-      const ok = await ctx.dialogs.confirm({
-        title: ctx.t(item.kind === "pr" ? "dialog.closePr" : "dialog.closeIssue", { number: item.number }),
-        description: item.title,
-        confirm: ctx.t("action.close"),
-        danger: true,
-      })
-      if (!ok) return
-    }
-    return attempt(() => git.setState({ repo: item.repo, number: item.number, kind: item.kind, open }))
+  /**
+   * Closes (with a reason, for issues) or reopens an issue or pull request, posting `comment` with it. A duplicate asks
+   * for the original's number. Resolves to undefined when cancelled or failed.
+   */
+  const setItemState = async (
+    item: Pick<Item, "repo" | "number" | "kind">,
+    open: boolean,
+    options: { reason?: CloseReason; comment?: string } = {},
+  ) => {
+    const duplicateOf = options.reason === "duplicate" ? await askDuplicate(item.number) : undefined
+    if (options.reason === "duplicate" && duplicateOf === undefined) return undefined
+    const reason = item.kind === "issue" && !open ? options.reason : undefined
+    return attempt(
+      () => git.setState({ repo: item.repo, number: item.number, kind: item.kind, open, reason, duplicateOf, comment: options.comment || undefined }),
+      ctx.t(open ? "toast.reopened" : `toast.closed.${item.kind === "pr" ? "pr" : (reason ?? "completed")}`, { number: item.number }),
+    )
+  }
+
+  const askDuplicate = async (number: number) => {
+    const input = await ctx.dialogs.prompt({ title: ctx.t("dialog.duplicateOf", { number }), placeholder: "#123", submit: ctx.t("close.duplicate") })
+    const match = /^#?(\d+)$/.exec(input?.trim() ?? "")
+    const original = match?.[1] ? Number(match[1]) : undefined
+    if (input !== undefined && input.trim() && (!original || original === number)) ctx.toast.show({ variant: "error", title: ctx.t("toast.badDuplicate") })
+    return original && original !== number ? original : undefined
+  }
+
+  /** The close entries for an issue (each reason) or a pull request, for a menu or a split button. */
+  const closeMenu = (item: Pick<Item, "repo" | "number" | "kind">, run: (work: () => Promise<unknown>) => void, comment?: () => string): UiMenuItem[] => {
+    const close = (reason?: CloseReason) => run(() => setItemState(item, false, { reason, comment: comment?.().trim() }))
+    if (item.kind === "pr") return [{ label: ctx.t("close.pr"), icon: "circle-x", onSelect: () => close() }]
+    return [
+      { label: ctx.t("close.completed"), icon: "circle-check", onSelect: () => close("completed") },
+      { label: ctx.t("close.not_planned"), icon: "circle-x", onSelect: () => close("not_planned") },
+      { label: ctx.t("close.duplicate"), icon: "copy", onSelect: () => close("duplicate") },
+    ]
   }
 
   const mergePr = async (cwd: string, pr: Pick<PullRequest, "number" | "title" | "head">, repo: string | null = null) => {
@@ -807,6 +833,7 @@ export function createActions(ctx: SetupContext<typeof definition>) {
     ask,
     agentMenu,
     setItemState,
+    closeMenu,
     copy,
     agent,
     openActivity,

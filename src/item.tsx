@@ -95,14 +95,14 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
         }),
     },
     { type: "separator" },
-    item.state === "OPEN"
-      ? { label: t("action.close"), icon: "circle-x", onSelect: () => void run("state", () => props.actions.setItemState(item, false)) }
-      : {
+    ...(item.state === "OPEN"
+      ? props.actions.closeMenu(item, (work) => void run("state", work))
+      : [{
           label: t("action.reopen"),
-          icon: "outline-undo",
+          icon: "outline-undo" as const,
           disabled: item.state === "MERGED",
           onSelect: () => void run("state", () => props.actions.setItemState(item, true)),
-        },
+        }]),
   ]
 
   return (
@@ -342,14 +342,39 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
                   <div class="ghp-item-actions">
                     <Show when={current().state === "OPEN"} fallback={
                       <Show when={current().state === "CLOSED"}>
-                        <ui.Button size="small" variant="ghost" disabled={!!busy()} onClick={() => void run("state", () => props.actions.setItemState(current(), true))}>
-                          {t("action.reopen")}
+                        <ui.Button
+                          size="small"
+                          variant="ghost"
+                          disabled={!!busy()}
+                          onClick={() =>
+                            void run("state", async () => {
+                              const typed = comment()
+                              const done = await props.actions.setItemState(current(), true, { comment: typed.trim() })
+                              if (done !== undefined && comment() === typed) setComment("")
+                            })
+                          }
+                        >
+                          {comment().trim() ? t("close.reopenWithComment") : t("action.reopen")}
                         </ui.Button>
                       </Show>
                     }>
-                      <ui.Button size="small" variant="ghost" disabled={!!busy()} onClick={() => void run("state", () => props.actions.setItemState(current(), false))}>
-                        {t("action.close")}
-                      </ui.Button>
+                      <ui.Menu
+                        label={comment().trim() ? t("close.withComment") : t(current().kind === "pr" ? "close.pr" : "close.issue")}
+                        trigger="button"
+                        icon="circle-x"
+                        placement="top-start"
+                        disabled={!!busy()}
+                        items={props.actions.closeMenu(
+                          current(),
+                          (work) =>
+                            void run("state", async () => {
+                              const typed = comment()
+                              const done = await work()
+                              if (done !== undefined && comment() === typed) setComment("")
+                            }),
+                          comment,
+                        )}
+                      />
                     </Show>
                     <div class="ghp-spacer" />
                     <Show when={current().kind === "pr" && current().state === "OPEN"}>

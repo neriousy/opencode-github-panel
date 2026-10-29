@@ -42,7 +42,7 @@ fetch, workflow runs and open on GitHub). Branch details appear only on the two 
   "12 of 40 reviewed · 8 approved · 4 skipped") and groups proposals by batch; keys `a` approve the batch and `u` take
   back the last decision while it has not run. The agent is told which proposals you skipped or edited, and how.
 - **Issue and pull request tabs**: click any issue or PR (in the lists, a branch badge, a PR chip, or the timeline) to
-  open it in its own side tab: state, labels, description and comments, a comment box, close and reopen, and an edit
+  open it in its own side tab: state, labels, description and comments, a comment box, close (as completed, not planned or duplicate, optionally with the typed comment) and reopen, and an edit
   menu for labels, assignees, reviewers, milestone and draft. Long content folds so there is less to scroll: long
   descriptions and comments clamp, bot comments and resolved threads start folded, long conversations hide the middle,
   and Fold all / Unfold all is one click (turn it off with "Fold long content"). Pull requests add **Files** (changed

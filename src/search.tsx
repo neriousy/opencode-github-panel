@@ -943,6 +943,16 @@ function ItemRow(props: {
       ? [{ label: t("action.startIssue"), icon: "branch-out" as const, onSelect: () => void s.run("branch", () => s.actions.startIssue(s.cwd(), props.item)) }]
       : []),
     ...s.actions.agentMenu(ref(), props.item.kind),
+    ...(props.item.state === "OPEN"
+      ? [
+          { type: "separator" as const },
+          {
+            type: "group" as const,
+            label: t("close.group"),
+            items: s.actions.closeMenu(props.item, (work) => void s.run("state", work)),
+          },
+        ]
+      : []),
     ...(props.item.kind === "pr" && props.item.state === "OPEN"
       ? [
           { type: "separator" as const },
