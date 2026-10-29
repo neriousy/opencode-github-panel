@@ -1,6 +1,8 @@
 import type { ChangedFile, Inbox, InboxEntry, Job, RemoteCommit, RepoMeta, Reviews, Run, RunDetails, SearchItem, SearchPage } from "./schemas"
 import { stateReason } from "./git"
 
+type ItemState = { state: "OPEN" | "CLOSED" | "MERGED"; reason?: "completed" | "not_planned" | "duplicate" }
+
 const META_TTL = 5 * 60_000
 const INBOX_TTL = 60_000
 const RUNS_TTL = 15_000
@@ -27,8 +29,8 @@ interface Deps {
   gh(args: readonly string[]): Promise<string>
   /** Runs gh with `input` on its standard input, for request bodies that are more than flat fields. */
   ghInput(args: readonly string[], input: string): Promise<string>
-  /** An issue or pull request changed: drop caches and tell windows. */
-  changed(repo: string, number: number): void
+  /** An issue or pull request changed: drop caches and tell windows, with its new state when known. */
+  changed(repo: string, number: number, state?: ItemState): void
   runChanged(repo: string, id: number): void
   inboxChanged(): void
 }
@@ -47,13 +49,15 @@ export function createGitHub(deps: Deps) {
   const inbox: { cached?: { time: number; value: Promise<Inbox> } } = {}
   const viewer: { value?: Promise<string> } = {}
 
-  const change = async <T>(repo: string, number: number, work: () => Promise<T>) => {
-    try {
-      return await work()
-    } finally {
-      forget(repo, number)
-      deps.changed(repo, number)
-    }
+  const change = async <T>(repo: string, number: number, work: () => Promise<T>, state?: ItemState) => {
+    const outcome = await work().then(
+      (value) => ({ value, ok: true as const }),
+      (error: unknown) => ({ error, ok: false as const }),
+    )
+    forget(repo, number)
+    deps.changed(repo, number, outcome.ok ? state : undefined)
+    if (!outcome.ok) throw outcome.error
+    return outcome.value
   }
 
   /** Drops what this backend cached about one issue or pull request. */
@@ -615,10 +619,10 @@ export function createGitHub(deps: Deps) {
             return { commentId: created.id, url: created.url }
           },
         )
-      }),
+      }, item === "pr" ? { state: "CLOSED" } : { state: "CLOSED", reason: reason === "duplicate" && !duplicateOf ? "completed" : reason }),
 
     reopenItem: (repo: string, number: number, item: "issue" | "pr") =>
-      change(repo, number, () => gh([item, "reopen", String(number), "--repo", repo])),
+      change(repo, number, () => gh([item, "reopen", String(number), "--repo", repo]), { state: "OPEN" }),
 
     /** Adds and removes labels or assignees through the issues API, which covers pull requests too. */
     editPeople: (repo: string, number: number, kind: "labels" | "assignees", add: readonly string[], remove: readonly string[]) =>

@@ -721,10 +721,12 @@ export function createActions(ctx: SetupContext<typeof definition>) {
     const duplicateOf = options.reason === "duplicate" ? await askDuplicate(item.number) : undefined
     if (options.reason === "duplicate" && duplicateOf === undefined) return undefined
     const reason = item.kind === "issue" && !open ? options.reason : undefined
-    return attempt(
+    const done = await attempt(
       () => git.setState({ repo: item.repo, number: item.number, kind: item.kind, open, reason, duplicateOf, comment: options.comment || undefined }),
       ctx.t(open ? "toast.reopened" : `toast.closed.${item.kind === "pr" ? "pr" : (reason ?? "completed")}`, { number: item.number }),
     )
+    if (done !== undefined) queries.itemChanged(item, open ? { state: "OPEN" } : { state: "CLOSED", reason: reason ?? "completed" })
+    return done
   }
 
   const askDuplicate = async (number: number) => {
@@ -766,7 +768,12 @@ export function createActions(ctx: SetupContext<typeof definition>) {
     })
     if (!branch) return
     const deleteBranch = branch === "delete"
-    return progress(ctx.t("action.mergePr"), () => git.mergePr({ cwd, repo, number: pr.number, method, deleteBranch }), ctx.t("toast.prMerged"))
+    const done = await progress(ctx.t("action.mergePr"), () => git.mergePr({ cwd, repo, number: pr.number, method, deleteBranch }), ctx.t("toast.prMerged"))
+    const target = repo ?? repoOf(queries.client.getQueryData<Overview>(queries.keys.overview(cwd)))
+    if (done !== undefined && target) queries.itemChanged({ repo: target, number: pr.number }, { state: "MERGED" })
+    // Merging can switch branches and delete one (with "delete branch"); the local views follow at once.
+    if (done !== undefined) queries.invalidate(queries.keys.git(cwd))
+    return done
   }
 
   // The agent's GitHub actions: the user's decisions on what it proposed.

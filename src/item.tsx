@@ -198,56 +198,58 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
                         </button>
                       </Show>
                     </div>
-                    <div class="ghp-item-actions">
-                      <ui.Button
-                        size="small"
-                        variant="neutral"
-                        icon="enter"
-                        busy={busy() === "checkout"}
-                        disabled={!local() || current().state !== "OPEN" || !!busy()}
-                        onClick={() =>
-                          void run("checkout", () =>
-                            props.actions.progress(
-                              t("action.checkoutPr"),
-                              () => git.checkoutPr({ cwd: overview.latest?.root ?? props.session.directory, number: current().number, repo: current().repo }),
-                              t("toast.switched", { name: pr().head }),
-                            ),
-                          )
-                        }
-                      >
-                        {t("action.checkoutPr")}
-                      </ui.Button>
-                      <Show when={current().draft && current().state === "OPEN"}>
+                    <Show when={current().state === "OPEN"}>
+                      <div class="ghp-item-actions">
                         <ui.Button
                           size="small"
                           variant="neutral"
-                          icon="check"
-                          busy={busy() === "draft"}
-                          disabled={!!busy()}
-                          onClick={() => void run("draft", () => editor.draft(current()))}
+                          icon="enter"
+                          busy={busy() === "checkout"}
+                          disabled={!local() || !!busy()}
+                          onClick={() =>
+                            void run("checkout", () =>
+                              props.actions.progress(
+                                t("action.checkoutPr"),
+                                () => git.checkoutPr({ cwd: overview.latest?.root ?? props.session.directory, number: current().number, repo: current().repo }),
+                                t("toast.switched", { name: pr().head }),
+                              ),
+                            )
+                          }
                         >
-                          {t("edit.ready")}
+                          {t("action.checkoutPr")}
                         </ui.Button>
-                      </Show>
-                      <ui.Button
-                        size="small"
-                        variant="contrast"
-                        icon="fork"
-                        busy={busy() === "merge"}
-                        disabled={current().state !== "OPEN" || current().draft || !!busy()}
-                        onClick={() =>
-                          void run("merge", () =>
-                            props.actions.mergePr(
-                              props.session.directory,
-                              { number: current().number, title: current().title, head: pr().head },
-                              current().repo,
-                            ),
-                          )
-                        }
-                      >
-                        {t("action.mergePr")}
-                      </ui.Button>
-                    </div>
+                        <Show when={current().draft && current().state === "OPEN"}>
+                          <ui.Button
+                            size="small"
+                            variant="neutral"
+                            icon="check"
+                            busy={busy() === "draft"}
+                            disabled={!!busy()}
+                            onClick={() => void run("draft", () => editor.draft(current()))}
+                          >
+                            {t("edit.ready")}
+                          </ui.Button>
+                        </Show>
+                        <ui.Button
+                          size="small"
+                          variant="contrast"
+                          icon="fork"
+                          busy={busy() === "merge"}
+                          disabled={current().draft || !!busy()}
+                          onClick={() =>
+                            void run("merge", () =>
+                              props.actions.mergePr(
+                                props.session.directory,
+                                { number: current().number, title: current().title, head: pr().head },
+                                current().repo,
+                              ),
+                            )
+                          }
+                        >
+                          {t("action.mergePr")}
+                        </ui.Button>
+                      </div>
+                    </Show>
                   </>
                 )}
               </Show>

@@ -317,13 +317,13 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
     }
   }
 
-  const itemChanged = (repo: string, number: number) => {
+  const itemChanged = (repo: string, number: number, state?: { state: "OPEN" | "CLOSED" | "MERGED"; reason?: "completed" | "not_planned" | "duplicate" }) => {
     items.delete(`${repo}#${number}`)
     pulls.clear()
     heads.clear()
     issues.clear()
     github.forgetInbox()
-    deps.emit("item", { repo, number })
+    deps.emit("item", { repo, number, ...state })
   }
 
   const github = createGitHub({
@@ -513,7 +513,7 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
         const note = comment?.trim()
         if (!open && note) await gh(home, [kind, "comment", String(number), "--repo", repo, "--body", note])
         if (!open) await github.closeItem(repo, number, kind, reason ?? "completed", duplicateOf)
-        if (open) await gh(home, [kind, "reopen", String(number), "--repo", repo])
+        if (open) await github.reopenItem(repo, number, kind)
         if (open && note) await gh(home, [kind, "comment", String(number), "--repo", repo, "--body", note])
         return ""
       }),
@@ -702,7 +702,7 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
           )
           if (target) {
             items.delete(`${target}#${number}`)
-            deps.emit("item", { repo: target, number })
+            deps.emit("item", { repo: target, number, state: "MERGED" })
           }
           return output
         },

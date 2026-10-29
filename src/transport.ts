@@ -26,7 +26,31 @@ export function createTransport(ctx: Context): GitClient {
     return { server, directory: session?.directory }
   }
 
+  // A write this window made is announced to its own views as soon as it returns, as the server's event will be: that
+  // event takes a round trip more, and none comes from a server without the server part.
+  const announce = (name: keyof typeof methods, input: unknown) => {
+    if (typeof input !== "object" || input === null) return
+    const repository = repositoryWrites[name]
+    if (repository !== undefined) {
+      const cwd = (input as Record<string, unknown>).cwd
+      const remote = repository === "remote" || (name === "commit" && (input as Record<string, unknown>).push === true)
+      if (typeof cwd === "string") listeners.get("changed")?.forEach((listener) => listener({ cwd, remote } as never))
+    }
+    const event = writes[name]
+    if (!event) return
+    // SAFETY: each listed method's input has the fields its event reads (repo and number, repo and id, or none).
+    const data =
+      event === "inbox" ? {} : event === "run" ? pick(input, ["repo", "id"]) : event === "agent" ? pick(input, ["sessionID"]) : pick(input, ["repo", "number"])
+    listeners.get(event)?.forEach((listener) => listener(data as never))
+  }
+
   const call = async (name: keyof typeof methods, input: unknown, options?: IpcCallOptions) => {
+    const result = await send(name, input, options)
+    announce(name, input)
+    return result
+  }
+
+  const send = async (name: keyof typeof methods, input: unknown, options?: IpcCallOptions) => {
     const { server, directory } = target()
     const skip = server ? (missing.get(server.id) ?? 0) > Date.now() : true
     if (server && !skip) {
@@ -86,6 +110,58 @@ export function createTransport(ctx: Context): GitClient {
     },
     // SAFETY: one function per method of the Git table, plus `state` and `on`, as IpcClient types it.
   }) as unknown as GitClient
+}
+
+const writes: Partial<Record<keyof typeof methods, "item" | "run" | "inbox" | "agent">> = {
+  comment: "item",
+  setState: "item",
+  edit: "item",
+  setDraft: "item",
+  submitReview: "item",
+  replyThread: "item",
+  resolveThread: "item",
+  lineComment: "item",
+  rerun: "run",
+  cancelRun: "run",
+  markRead: "inbox",
+  agentDecide: "agent",
+  agentEdit: "agent",
+  agentUndo: "agent",
+  agentRetry: "agent",
+  agentAuto: "agent",
+}
+
+/** Writes to a repository, by whether they also change GitHub (a push, a merged or created pull request). */
+const repositoryWrites: Partial<Record<keyof typeof methods, "local" | "remote">> = {
+  stage: "local",
+  unstage: "local",
+  discard: "local",
+  commit: "local",
+  checkout: "local",
+  createBranch: "local",
+  deleteBranch: "local",
+  deleteBranches: "local",
+  undoCommit: "local",
+  merge: "local",
+  rebase: "local",
+  cherryPick: "local",
+  revert: "local",
+  abort: "local",
+  continue: "local",
+  stash: "local",
+  stashPop: "local",
+  deleteRemoteBranch: "remote",
+  fetch: "remote",
+  pull: "remote",
+  push: "remote",
+  pushBranch: "remote",
+  createPr: "remote",
+  checkoutPr: "remote",
+  mergePr: "remote",
+}
+
+function pick(input: object, fields: readonly string[]) {
+  return Object.fromEntries(fields.map((field) => [field, (input as Record<string, unknown>)[field]]))
 }
 
 /** The server answered, but it has no such RPC: the plugin's server part is not installed or not loaded there. */

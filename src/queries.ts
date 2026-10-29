@@ -10,7 +10,7 @@ import {
   type QueryKey,
   type QueryObserverResult,
 } from "@tanstack/query-core"
-import type { AgentQueue, ItemRef, SearchPage } from "./schemas"
+import type { AgentQueue, Item, ItemRef, SearchPage } from "./schemas"
 import type { GitClient } from "./transport"
 
 /** The options the views pass to `query`. */
@@ -197,9 +197,27 @@ export function createQueries(git: GitClient) {
   }
 
   /** Pull requests or issues matching a GitHub search, a page at a time. */
+  // States this window just set (merged, closed, reopened), kept over search results for a while: GitHub's search index
+  // lags behind for seconds to minutes, so a refetch right after would show the item as it was.
+  const recent = new Map<string, { patch: Partial<Pick<Item, "state" | "reason">>; until: number }>()
+  const overlay = (page: SearchPage): SearchPage => {
+    const now = Date.now()
+    if (recent.size === 0) return page
+    return {
+      ...page,
+      items: page.items.map((item) => {
+        const entry = recent.get(`${item.repo.toLowerCase()}#${item.number}`)
+        if (!entry || entry.until < now) return item
+        const next = { ...item, ...entry.patch }
+        if (next.state !== "CLOSED" || next.kind !== "issue") delete next.reason
+        return next
+      }),
+    }
+  }
+
   const search = (repo: string, kind: "issue" | "pr", query: string) => ({
     queryKey: keys.search(repo, kind, query),
-    queryFn: ({ pageParam }: { pageParam: string | null }) => git.search({ repo, kind, query, cursor: pageParam }),
+    queryFn: ({ pageParam }: { pageParam: string | null }) => git.search({ repo, kind, query, cursor: pageParam }).then(overlay),
     initialPageParam: null as string | null,
     getNextPageParam: (page: SearchPage) => page.cursor,
     staleTime: 60 * SECOND,
@@ -210,13 +228,30 @@ export function createQueries(git: GitClient) {
 
   // The backend reports every change it makes; mark exactly what it touched stale. Views showing it refetch at once,
   // others when they next mount.
-  git.on("item", (changed) => {
-    invalidate(["gh", changed.repo, "item", changed.number])
-    invalidate(["gh", changed.repo, "search"])
-    invalidate(["gh", changed.repo, "checks"])
+  /**
+   * An issue or pull request changed: everything that shows it refetches. `patch` updates its tab at once with what is
+   * known already (merged, closed, reopened), so it does not wait for GitHub's answer.
+   */
+  const itemChanged = (ref: ItemRef, patch?: Partial<Pick<Item, "state" | "reason">>) => {
+    if (patch) {
+      client.setQueryData<Item>(keys.item(ref), (old) => {
+        if (!old) return old
+        const next = { ...old, ...patch }
+        if (next.state !== "CLOSED" || next.kind !== "issue") delete next.reason
+        return next
+      })
+      recent.set(`${ref.repo.toLowerCase()}#${ref.number}`, { patch, until: Date.now() + 2 * MINUTE })
+      client.setQueriesData<InfiniteData<SearchPage, string | null>>({ queryKey: ["gh", ref.repo, "search"] }, (old) =>
+        old ? { ...old, pages: old.pages.map(overlay) } : old,
+      )
+    }
+    invalidate(["gh", ref.repo, "item", ref.number])
+    invalidate(["gh", ref.repo, "search"])
+    invalidate(["gh", ref.repo, "checks"])
     invalidate(["pulls"])
     invalidate(["inbox"])
-  })
+  }
+  git.on("item", (changed) => itemChanged(changed, changed.state ? { state: changed.state, reason: changed.reason } : undefined))
   git.on("changed", (changed) => {
     invalidate(["git"])
     if (!changed.remote) return
@@ -246,6 +281,7 @@ export function createQueries(git: GitClient) {
     options,
     search,
     invalidate,
+    itemChanged,
     /** A query bound to this window's client, typed by the query function's result. */
     query: <T>(accessor: () => QueryInput<T>) =>
       observe<QueryObserverResult<T, Error>>(client, (options) => new QueryObserver(client, options), accessor),

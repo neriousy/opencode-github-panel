@@ -806,7 +806,13 @@ export const events = {
   /** A command changed the repository at `cwd`; windows showing it refresh. */
   changed: Schema.Struct({ cwd: Schema.String, remote: Schema.optional(Schema.Boolean) }),
   /** An issue or pull request changed through this plugin; detail tabs showing it refresh. */
-  item: ItemRef,
+  /** With the state it changed to, when known (closed, reopened, merged): windows show it before GitHub's search catches up. */
+  item: Schema.Struct({
+    repo: Schema.String,
+    number: Schema.Number,
+    state: Schema.optional(Schema.Literals(["OPEN", "CLOSED", "MERGED"])),
+    reason: Schema.optional(Schema.Literals(["completed", "not_planned", "duplicate"])),
+  }),
   /** A workflow run was re-run or cancelled through this plugin. */
   run: Schema.Struct({ repo: Schema.String, id: Schema.Number }),
   /** Notifications were marked read. */
