@@ -53,7 +53,8 @@ fetch, workflow runs and open on GitHub). Branch details appear only on the two 
 - **Inbox** (the bell): notifications grouped by repository, marked read only when you open one or ask to.
 - **Timeline mentions**: in the session timeline, `#123`, `owner/repo#123` and github.com issue or pull links are
   clickable. Hover one for a card with its state, author, size and checks; click it to open its tab; ⌘-click still
-  opens GitHub. Bare `#123` resolves against the session's repository. This uses a CSS highlight and document
+  opens GitHub; right-click for a menu (open, copy link or reference, start working, ask the agent, close with a
+  reason or reopen, check out or merge a pull request). Bare `#123` resolves against the session's repository. This uses a CSS highlight and document
   listeners, since the timeline has no plugin API for it; it never changes the timeline's DOM.
 - **Session header chip**: the session's branch, a dot for uncommitted changes, and its pull request. Click it to open
   the panel. Turn it off from the panel's menu or the command palette.

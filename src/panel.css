@@ -2075,3 +2075,20 @@
   opacity: 0.55;
   transition: opacity 120ms;
 }
+
+/* The invisible trigger of a mention's right-click menu, at the pointer; the menu itself is the app's. */
+.ghp-ref-menu {
+  position: fixed;
+  z-index: 1001;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  opacity: 0;
+
+  button {
+    width: 1px;
+    height: 1px;
+    min-width: 0;
+    padding: 0;
+  }
+}

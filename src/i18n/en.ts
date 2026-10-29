@@ -261,6 +261,8 @@ export const en = {
   "action.close": "Close",
   "action.reopen": "Reopen",
   "close.group": "Close",
+  "ref.menu": "Options for {{ref}}",
+  "ref.copyRef": "Copy reference",
   "state.closed.completed": "Closed as completed",
   "state.closed.not_planned": "Closed as not planned",
   "state.closed.duplicate": "Closed as duplicate",

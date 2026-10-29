@@ -1,6 +1,6 @@
-import { createEffect, createSignal, on, onCleanup, Show } from "solid-js"
+import { createEffect, createSignal, on, onCleanup, onMount, Show } from "solid-js"
 import { Portal } from "solid-js/web"
-import type { Context } from "@opencode/plugin/gui"
+import type { Context, UiMenuEntry } from "@opencode/plugin/gui"
 import { latest } from "./queries"
 import { repoOf, type Actions } from "./actions"
 import type { ItemRef } from "./contract"
@@ -28,6 +28,8 @@ interface Hover {
 export function createRefs(ctx: Context, actions: Actions) {
   const q = actions.queries
   const [hover, setHover] = createSignal<Hover>()
+  // The right-click menu of a mention: where it opens, and what for. Bumping `key` reopens it on another right click.
+  const [menu, setMenu] = createSignal<{ ref: ItemRef; x: number; y: number; key: number }>()
   const highlight = typeof CSS !== "undefined" && "highlights" in CSS ? new Highlight() : undefined
   const cache = new WeakMap<Element, { key: string; ranges: { range: Range; repo?: string; number: number }[] }>()
   const mentions: { range: Range; repo?: string; number: number }[] = []
@@ -151,6 +153,20 @@ export function createRefs(ctx: Context, actions: Actions) {
     })
   }
 
+  const onContextMenu = (event: MouseEvent) => {
+    if (event.target instanceof Element && event.target.closest(".ghp-card")) return
+    const mention = mentionAt(event)
+    if (!mention) return
+    event.preventDefault()
+    event.stopPropagation()
+    hide()
+    const at = { x: event.clientX, y: event.clientY }
+    void mention.ref().then((ref) => {
+      if (!ref) return ctx.toast.show({ variant: "error", title: ctx.t("toast.noRepo") })
+      setMenu({ ref, ...at, key: Date.now() })
+    })
+  }
+
   // Where the pointer is, kept up to date from pointer moves (at most once a frame) and the card's own enter and leave.
   const pointer = { frame: 0, last: undefined as MouseEvent | undefined, over: "", card: false }
 
@@ -234,6 +250,7 @@ export function createRefs(ctx: Context, actions: Actions) {
   }
 
   window.addEventListener("click", onClick, true)
+  window.addEventListener("contextmenu", onContextMenu, true)
   window.addEventListener("mousemove", onMove, { capture: true, passive: true })
   document.addEventListener("mouseout", onOut, { capture: true, passive: true })
   window.addEventListener("blur", onAway)
@@ -247,6 +264,7 @@ export function createRefs(ctx: Context, actions: Actions) {
   onCleanup(() => {
     observer.disconnect()
     window.removeEventListener("click", onClick, true)
+    window.removeEventListener("contextmenu", onContextMenu, true)
     window.removeEventListener("mousemove", onMove, { capture: true })
     document.removeEventListener("mouseout", onOut, { capture: true })
     window.removeEventListener("blur", onAway)
@@ -292,7 +310,103 @@ export function createRefs(ctx: Context, actions: Actions) {
     )
   }
 
-  return { HoverLayer }
+  /** The hover card and a mention's right-click menu, rendered from a window slot into the document body. */
+  function Layers() {
+    return (
+      <>
+        <HoverLayer />
+        <Show when={menu()} keyed>
+          {(current) => (
+            <Portal>
+              <RefMenu ctx={ctx} actions={actions} target={current} onClose={() => setMenu((open) => (open?.key === current.key ? undefined : open))} />
+            </Portal>
+          )}
+        </Show>
+      </>
+    )
+  }
+
+  return { HoverLayer: Layers }
+}
+
+/**
+ * The app's own menu, opened at the pointer: an invisible trigger placed where the user right-clicked, pressed once it
+ * mounts. Entries that depend on the item (start working, close, checkout) appear once it is loaded, usually at once
+ * since hovering loaded it.
+ */
+function RefMenu(props: { ctx: Context; actions: Actions; target: { ref: ItemRef; x: number; y: number }; onClose: () => void }) {
+  const ctx = props.ctx
+  const t = ctx.t
+  const actions = props.actions
+  const q = actions.queries
+  const ref = props.target.ref
+  const item = latest(q.query(() => q.options.item(ref)))
+  const url = () => item.latest?.url ?? `https://github.com/${ref.repo}/issues/${ref.number}`
+  const cwd = () => ctx.sessions.current()?.directory
+  const run = (work: () => Promise<unknown>) => void work()
+
+  const items = (): UiMenuEntry[] => {
+    const current = item.latest
+    const open = current?.state === "OPEN"
+    const directory = cwd()
+    return [
+      { label: t("action.openDetails"), icon: "info", onSelect: () => actions.openItem(ref) },
+      { label: t("action.openOnGitHub"), icon: "square-arrow-top-right", onSelect: () => ctx.system.openExternal(url()) },
+      { label: t("action.copyLink"), icon: "link", onSelect: () => void actions.copy(url()) },
+      { label: t("ref.copyRef"), icon: "copy", onSelect: () => void actions.copy(`${ref.repo}#${ref.number}`) },
+      { type: "separator" },
+      ...(current?.kind === "issue" && open && directory
+        ? [{ label: t("action.startIssue"), icon: "branch-out" as const, onSelect: () => void actions.startIssue(directory, current) }]
+        : []),
+      ...actions.agentMenu(ref, current?.kind ?? "unknown"),
+      ...(current?.kind === "pr" && open && directory
+        ? [
+            { type: "separator" as const },
+            {
+              label: t("action.checkoutPr"),
+              icon: "enter" as const,
+              onSelect: () =>
+                run(() =>
+                  actions.progress(t("action.checkoutPr"), () => actions.git.checkoutPr({ cwd: directory, number: ref.number, repo: ref.repo })),
+                ),
+            },
+            {
+              label: t("action.mergePr"),
+              icon: "fork" as const,
+              disabled: current.draft,
+              onSelect: () => run(() => actions.mergePr(directory, { number: ref.number, title: current.title, head: current.pr?.head ?? "" }, ref.repo)),
+            },
+          ]
+        : []),
+      ...(current && open ? [{ type: "group" as const, label: t("close.group"), items: actions.closeMenu(current, run) }] : []),
+      ...(current?.state === "CLOSED"
+        ? [
+            { type: "separator" as const },
+            { label: t("action.reopen"), icon: "outline-undo" as const, onSelect: () => run(() => actions.setItemState(current, true)) },
+          ]
+        : []),
+    ]
+  }
+
+  const anchor = (element: HTMLDivElement) => {
+    onMount(() => {
+      const trigger = element.querySelector("button")
+      if (!trigger) return props.onClose()
+      // Closes when the menu does: the trigger reports it in aria-expanded.
+      const observer = new MutationObserver(() => {
+        if (trigger.getAttribute("aria-expanded") === "false") props.onClose()
+      })
+      observer.observe(trigger, { attributes: true, attributeFilter: ["aria-expanded"] })
+      onCleanup(() => observer.disconnect())
+      trigger.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, pointerType: "mouse" }))
+    })
+  }
+
+  return (
+    <div ref={anchor} class="ghp-ref-menu" style={{ left: `${props.target.x}px`, top: `${props.target.y}px` }}>
+      <ctx.ui.Menu label={t("ref.menu", { ref: `#${ref.number}` })} trigger="icon" placement="bottom-start" items={items()} />
+    </div>
+  )
 }
 
 function HoverCard(props: { ctx: Context; actions: Actions; hover: Hover; onEnter: () => void; onLeave: () => void; onOpen: () => void }) {
