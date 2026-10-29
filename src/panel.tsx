@@ -1,13 +1,13 @@
 import { createEffect, createMemo, createSignal, For, Match, onMount, Show, Switch, type Accessor, type JSX } from "solid-js"
 import { createKeyed, usePanel, usePlugin, type Context, type MountedSession, type UiMenuEntry } from "@opencode/plugin/gui"
-import { errorMessage, pullFor, repoOf, type Actions } from "./actions"
+import { errorMessage, repoOf, type Actions } from "./actions"
 import { ActivityView } from "./activity"
 import { openBranchPicker } from "./branches"
 import { fileContext } from "./context"
 import { latest } from "./queries"
 import type { AgentQueue, Commit, FileChange, Overview, PullRequest, Pulls } from "./contract"
 import type { definition, View } from "./definition"
-import { closingRefs, parseItemUrl } from "./git"
+import { closingRefs, parseItemUrl, pullFor } from "./git"
 import { layout, type GraphEdge, type GraphRow } from "./graph"
 import { InboxView } from "./inbox"
 import { IssueIcon, ItemHover } from "./item"
@@ -575,7 +575,7 @@ function BranchStrip(props: { state: State }) {
   const q = s.actions.queries
   const ov = s.overview
   const shown = () => !!ov().branch && !!ov().remote && ov().branch !== ov().defaultBranch && !!s.pulls() && !s.pulls()?.error
-  const pr = () => pullFor(s.pulls(), ov().branch)
+  const pr = () => pullFor(s.pulls(), ov().branch, ov().head, ov().defaultBranch)
   const ref = () => {
     const current = pr()
     return current ? parseItemUrl(current.url) : undefined
@@ -1424,7 +1424,7 @@ function RefBadges(props: { state: State; commit: Commit; color: number }) {
         name,
         current: head && name === s.overview().branch,
         synced: remotes.some((remote) => short(remote) === name),
-        pr: pullFor(s.pulls(), name),
+        pr: pullFor(s.pulls(), name, props.commit.hash, s.overview().defaultBranch),
       }))
       .sort((a, b) => Number(b.current) - Number(a.current))
     return [
@@ -1432,7 +1432,7 @@ function RefBadges(props: { state: State; commit: Commit; color: number }) {
       ...local,
       ...remotes
         .filter((remote) => !locals.includes(short(remote)))
-        .map((name): Badge => ({ kind: "remote", name, pr: pullFor(s.pulls(), short(name)) })),
+        .map((name): Badge => ({ kind: "remote", name, pr: pullFor(s.pulls(), short(name), props.commit.hash, s.overview().defaultBranch) })),
       ...refs.filter((ref) => ref.kind === "tag").map((ref): Badge => ({ kind: "tag", name: ref.name })),
     ]
   })

@@ -1,4 +1,4 @@
-import type { Branch, Check, Commit, FileChange, Issue, Item, ItemRef, Label, PullRequest, Ref, Remote } from "./schemas"
+import type { Branch, Check, Commit, FileChange, Issue, Item, ItemRef, Label, PullRequest, Pulls, Ref, Remote } from "./schemas"
 
 export const FIELD = "\x1f"
 export const RECORD = "\x1e"
@@ -503,4 +503,25 @@ export function parsePatch(patch: string): DiffLine[] {
     lines.push({ kind: "context", text: text.slice(1), old: at.old++, new: at.new++ })
   })
   return lines
+}
+
+/**
+ * The pull request a branch stands for: its open one, else its last merged or closed one, but only while the branch
+ * still points at that pull request's head (`tip`, when known). A long-lived branch, such as dev merged into production
+ * and then worked on, has moved on, so its old pull request no longer describes it; the default branch never shows one.
+ */
+export function pullFor(
+  pulls: Pulls | undefined,
+  branch: string | null | undefined,
+  tip?: string | null,
+  defaultBranch?: string | null,
+): PullRequest | undefined {
+  if (!pulls || !branch) return undefined
+  const matching = pulls.items.filter((item) => item.head === branch && !item.cross)
+  const open = matching.find((item) => item.state === "OPEN")
+  if (open) return open
+  if (branch === defaultBranch) return undefined
+  const done = matching[0]
+  if (!done || !tip || !done.sha) return done
+  return done.sha === tip ? done : undefined
 }

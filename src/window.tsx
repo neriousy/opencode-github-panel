@@ -1,13 +1,13 @@
 import { Show } from "solid-js"
 import { Command, ComposerPill, MenuItem, Panel, Slot, Style, usePlugin, type MountedSession, type PanelTab, type Plugin } from "@opencode/plugin/gui"
-import { createActions, errorMessage, pullFor, repoOf, type Actions } from "./actions"
+import { createActions, errorMessage, repoOf, type Actions } from "./actions"
 import { createAgentPill } from "./activity"
 import { openBranchPicker } from "./branches"
 import { CommitView } from "./commit"
 import { RunView } from "./run"
 import { parseTab, type TabTarget } from "./tabs"
 import type { definition } from "./definition"
-import { parseItemUrl } from "./git"
+import { parseItemUrl, pullFor } from "./git"
 import { IssueIcon, ItemView } from "./item"
 import { RunStatus } from "./pr"
 import { GitPanel, PrChip, PrIcon } from "./panel"
@@ -250,7 +250,7 @@ function HeaderChip(props: { session: MountedSession; actions: Actions; onOpen: 
   const q = props.actions.queries
   const overview = latest(q.query(() => ({ ...q.options.overview(props.session.directory), refetchInterval: 15_000 })))
   const pulls = latest(q.query(() => ({ ...q.options.pulls(overview.latest?.root ?? props.session.directory), enabled: !!overview.latest?.remote })))
-  const pr = () => pullFor(pulls.latest, overview.latest?.branch)
+  const pr = () => pullFor(pulls.latest, overview.latest?.branch, overview.latest?.head, overview.latest?.defaultBranch)
 
   return (
     <Show when={overview.latest}>

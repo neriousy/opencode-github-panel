@@ -4,11 +4,11 @@ import { itemContext, sessionTitle, type Context as ChatContext } from "./contex
 import { tabId, type TabTarget } from "./tabs"
 import { createQueries } from "./queries"
 import { createTransport, type GitClient } from "./transport"
-import type { Branch, Item, ItemRef, Overview, PullRequest, Pulls } from "./contract"
+import type { Branch, Item, ItemRef, Overview, PullRequest } from "./contract"
 
 type CloseReason = "completed" | "not_planned" | "duplicate"
 import type { definition } from "./definition"
-import { issueBranchName, issueFromBranch, withClosing } from "./git"
+import { issueBranchName, issueFromBranch, pullFor, withClosing } from "./git"
 
 export type { GitClient } from "./transport"
 export type Actions = ReturnType<typeof createActions>
@@ -20,12 +20,6 @@ export function errorMessage(error: unknown) {
 }
 
 /** The pull request a branch belongs to: an open one first, else the most recent. */
-export function pullFor(pulls: Pulls | undefined, branch: string | null | undefined): PullRequest | undefined {
-  if (!pulls || !branch) return undefined
-  const matching = pulls.items.filter((item) => item.head === branch && !item.cross)
-  return matching.find((item) => item.state === "OPEN") ?? matching[0]
-}
-
 export function repoOf(overview: Overview | null | undefined) {
   return overview?.remote ? `${overview.remote.owner}/${overview.remote.repo}` : undefined
 }
@@ -202,7 +196,7 @@ export function createActions(ctx: SetupContext<typeof definition>) {
 
   const openPr = async (cwd: string) => {
     const [overview, pulls] = await Promise.all([git.overview({ cwd }).catch(() => null), git.pulls({ cwd, fresh: false }).catch(() => undefined)])
-    const pr = pullFor(pulls, overview?.branch)
+    const pr = pullFor(pulls, overview?.branch, overview?.head, overview?.defaultBranch)
     if (pr) return ctx.system.openExternal(pr.url)
     if (!overview?.branch) return ctx.toast.show({ variant: "error", title: ctx.t("toast.noRepo") })
     ctx.toast.show({

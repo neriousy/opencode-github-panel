@@ -1,6 +1,7 @@
 import { createMemo, createSignal, For, Show } from "solid-js"
 import { createKeyed, type Context, type DialogHandle, type UiMenuEntry } from "@opencode/plugin/gui"
-import { errorMessage, folderOf, pullFor, type Actions } from "./actions"
+import { errorMessage, folderOf, type Actions } from "./actions"
+import { pullFor } from "./git"
 import { cleanupCandidates, type CleanupCandidate, type CleanupReason } from "./cleanup"
 import type { Branch } from "./contract"
 import { ago, PrChip } from "./panel"
@@ -31,7 +32,7 @@ function BranchPicker(props: { ctx: Context; actions: Actions; cwd: string; dial
   const branchData = createBranchData(props.actions, () => props.cwd)
   const overview = branchData.overview
   const root = branchData.root
-  const prFor = branchData.prFor
+  const prFor = branchData.prOf
   const all = () => branchData.branches() ?? []
   const locals = createMemo(() => all().filter((branch) => !branch.remote))
 
@@ -39,7 +40,7 @@ function BranchPicker(props: { ctx: Context; actions: Actions; cwd: string; dial
     const query = filter().trim().toLowerCase()
     const matches = (branch: Branch) => {
       if (!query) return true
-      const pr = prFor(shortName(branch))
+      const pr = prFor(branch)
       return branch.name.toLowerCase().includes(query) || (!!pr && `#${pr.number}`.startsWith(query))
     }
     const names = new Set(locals().map((branch) => branch.name))
@@ -47,8 +48,8 @@ function BranchPicker(props: { ctx: Context; actions: Actions; cwd: string; dial
     const others = locals().filter((branch) => !branch.current)
     const recent = others.slice(0, RECENT)
     const rest = others.slice(RECENT)
-    const pulls = rest.filter((branch) => prFor(branch.name)?.state === "OPEN")
-    const local = rest.filter((branch) => prFor(branch.name)?.state !== "OPEN")
+    const pulls = rest.filter((branch) => prFor(branch)?.state === "OPEN")
+    const local = rest.filter((branch) => prFor(branch)?.state !== "OPEN")
     // A remote branch with a local copy is listed once, as the local branch.
     const remote = all().filter((branch) => branch.remote && !names.has(shortName(branch)))
     const section = (name: Row["section"], list: readonly Branch[]) => list.filter(matches).map((branch): Row => ({ section: name, branch }))
@@ -103,7 +104,7 @@ function BranchPicker(props: { ctx: Context; actions: Actions; cwd: string; dial
   const items = (branch: Branch): UiMenuEntry[] => {
     const current = overview()?.branch
     const remote = overview()?.remote
-    const pr = prFor(shortName(branch))
+    const pr = prFor(branch)
     const disabled = !!busy()
     return [
       branch.worktree
@@ -249,7 +250,7 @@ function BranchPicker(props: { ctx: Context; actions: Actions; cwd: string; dial
                     index={index()}
                     active={active() === index()}
                     busy={!!busy()}
-                    pr={prFor(shortName(row.branch))}
+                    pr={prFor(row.branch)}
                     items={items(row.branch)}
                     onActive={() => setActive(index())}
                     onCheckout={() => checkout(row.branch)}
@@ -362,12 +363,19 @@ function createBranchData(actions: Actions, cwd: () => string) {
   )
   const branchPulls = latest(q.query(() => ({ ...q.options.branchPulls(root(), names()), enabled: remote() && names().length > 0 })))
   const prFor = (name: string) => pullFor(branchPulls.latest, name) ?? pullFor(pulls.latest, name)
+  // What a row shows: a finished pull request only while the branch still points at its head.
+  const prOf = (branch: Branch) => {
+    const name = shortName(branch)
+    const base = overview.latest?.defaultBranch
+    return pullFor(branchPulls.latest, name, branch.sha, base) ?? pullFor(pulls.latest, name, branch.sha, base)
+  }
   return {
     overview: () => overview.latest,
     root,
     branches: () => branches.latest,
     error: () => branches.error ?? overview.error,
     prFor,
+    prOf,
     /** Pull requests are known for every branch, or cannot be: no GitHub remote, or the lookup failed. */
     prsSettled: () => !remote() || names().length === 0 || branchPulls.latest !== undefined || branchPulls.error !== undefined,
   }

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { layout } from "./graph"
-import { parseBranches, parseDecorations, parseLog, parseRemote, parseStatus, parseWorktrees } from "./git"
+import { parseBranches, parseDecorations, parseLog, parseRemote, parseStatus, parseWorktrees, pullFor } from "./git"
+import type { PullRequest } from "./schemas"
 
 describe("parseStatus", () => {
   test("reads branch headers, renames, conflicts and untracked files", () => {
@@ -288,5 +289,35 @@ describe("issue links", () => {
       { repo: "me/sandbox", number: 3 },
       { repo: "me/repo", number: 4 },
     ])
+  })
+})
+
+describe("pullFor", () => {
+  const pr = (number: number, state: PullRequest["state"], head: string, sha?: string): PullRequest => ({
+    number,
+    title: `#${number}`,
+    state,
+    draft: false,
+    url: `https://github.com/o/r/pull/${number}`,
+    head,
+    cross: false,
+    base: "main",
+    author: "a",
+    review: null,
+    checks: "none",
+    updated: "2026-10-29T00:00:00Z",
+    sha,
+  })
+
+  test("shows a merged pull request only while the branch still points at its head", () => {
+    const pulls = { error: null, items: [pr(7, "MERGED", "feature", "aaa")] }
+    expect(pullFor(pulls, "feature", "aaa", "main")?.number).toBe(7)
+    expect(pullFor(pulls, "feature", "bbb", "main")).toBeUndefined()
+    expect(pullFor(pulls, "feature", undefined, "main")?.number).toBe(7)
+  })
+
+  test("never shows a finished pull request on the default branch, but does show an open one", () => {
+    expect(pullFor({ error: null, items: [pr(9, "MERGED", "dev", "ccc")] }, "dev", "ccc", "dev")).toBeUndefined()
+    expect(pullFor({ error: null, items: [pr(10, "OPEN", "dev", "ddd"), pr(9, "MERGED", "dev", "ccc")] }, "dev", "eee", "dev")?.number).toBe(10)
   })
 })
