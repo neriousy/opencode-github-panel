@@ -1,6 +1,6 @@
 {
   "name": "opencode-github-panel",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Git and GitHub for OpenCode Desktop: commit graph, branches, pull requests, reviews, CI, issues, triage and agent tools with an approval queue",
   "keywords": [
     "opencode",
