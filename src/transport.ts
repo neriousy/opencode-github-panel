@@ -1,4 +1,4 @@
-import { getOwner, onCleanup } from "solid-js"
+import { createEffect, getOwner, on, onCleanup } from "solid-js"
 import { createKeyed, type Context, type IpcCallOptions, type IpcClient, type ServerRef } from "@opencode/plugin/gui"
 import { Git } from "./contract"
 import { GitRpc } from "./rpc"
@@ -10,6 +10,43 @@ export type GitClient = IpcClient<(typeof Git)["spec"]>
 // there takes effect without reloading the app.
 const RETRY = 60_000
 
+// The app sends every request to a server through one queue of four, and counts a plugin call (a POST) as a write that
+// goes first. The panel's reads shell out to gh and take seconds, longer on a remote server, so a burst of them would hold
+// the queue while the timeline waits for its messages. At most this many run at once per server, and reads wait a moment
+// after a session switch, so the timeline's first requests go ahead of them.
+const PER_SERVER = 2
+const SETTLE = 900
+
+/** Methods that only read; any other call changes something and goes ahead of them. */
+const reads = new Set<string>([
+  "overview",
+  "log",
+  "show",
+  "branches",
+  "pulls",
+  "branchPulls",
+  "search",
+  "prChecks",
+  "issues",
+  "item",
+  "prFiles",
+  "reviews",
+  "repoMeta",
+  "remoteCommit",
+  "runs",
+  "run",
+  "jobLog",
+  "inbox",
+  "diff",
+  "prDefaults",
+  "merged",
+  "mergedBranches",
+  "outgoing",
+  "agentActions",
+  "agentRecent",
+  "reviewDrafts",
+])
+
 /**
  * Calls the backend where the routed session's repository lives: the server part over RPC on the session's server,
  * remote servers included. When that server has no server part and runs on this machine, it falls back to this app's
@@ -19,6 +56,30 @@ export function createTransport(ctx: Context): GitClient {
   const local = ctx.main(Git)
   const missing = new Map<string, number>()
   const listeners = new Map<string, Set<(data: never) => void>>()
+
+  const pools = new Map<string, { running: number; waiting: { write: boolean; start: () => void }[] }>()
+  const switched = { at: 0 }
+  createEffect(on(() => ctx.sessions.current()?.id, () => (switched.at = Date.now()), { defer: true }))
+
+  /** Runs `work` within the server's share: writes first, reads after the settle time that follows a session switch. */
+  const scheduled = async <T>(server: string, write: boolean, work: () => Promise<T>) => {
+    const wait = switched.at + SETTLE - Date.now()
+    if (!write && wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
+    const pool = pools.get(server) ?? { running: 0, waiting: [] }
+    pools.set(server, pool)
+    if (pool.running >= PER_SERVER)
+      await new Promise<void>((start) => {
+        const index = write ? pool.waiting.findIndex((entry) => !entry.write) : -1
+        pool.waiting.splice(index === -1 ? pool.waiting.length : index, 0, { write, start })
+      })
+    pool.running++
+    try {
+      return await work()
+    } finally {
+      pool.running--
+      pool.waiting.shift()?.start()
+    }
+  }
 
   const target = () => {
     const session = ctx.sessions.current()
@@ -58,7 +119,10 @@ export function createTransport(ctx: Context): GitClient {
         // SAFETY: GitRpc is built from `methods`, so it has every method name with these inputs.
         const rpc = server.client.rpc(GitRpc) as unknown as Record<string, (input: unknown, options: object) => Promise<unknown>>
         const method = rpc[name]
-        if (method) return await method(input, { location: directory ? { directory } : undefined, signal: options?.signal })
+        if (method)
+          return await scheduled(server.id, !reads.has(name), () =>
+            method(input, { location: directory ? { directory } : undefined, signal: options?.signal }),
+          )
       } catch (error) {
         if (!unsupported(error)) throw asError(error)
         missing.set(server.id, Date.now() + RETRY)
