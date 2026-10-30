@@ -804,7 +804,12 @@ export const serverMethods = { ...methods, ...agentMethods, ...reviewMethods }
 /** What the backend announces after a change, so views showing it refresh. */
 export const events = {
   /** A command changed the repository at `cwd`; windows showing it refresh. */
-  changed: Schema.Struct({ cwd: Schema.String, remote: Schema.optional(Schema.Boolean) }),
+  changed: Schema.Struct({
+    cwd: Schema.String,
+    remote: Schema.optional(Schema.Boolean),
+    /** Only the pull requests the panel lists changed, such as a slow list that finished loading. */
+    pulls: Schema.optional(Schema.Boolean),
+  }),
   /** An issue or pull request changed through this plugin; detail tabs showing it refresh. */
   /** With the state it changed to, when known (closed, reopened, merged): windows show it before GitHub's search catches up. */
   item: Schema.Struct({

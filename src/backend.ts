@@ -2,12 +2,18 @@ import { spawn, type ChildProcess } from "node:child_process"
 import { existsSync } from "node:fs"
 import { readdir, readFile } from "node:fs/promises"
 import { homedir } from "node:os"
-import { basename, delimiter, join } from "node:path"
+import { basename, delimiter, isAbsolute, join } from "node:path"
 import type { events, Issues, Item, methods, Overview, PullRequest, Pulls } from "./schemas"
 import { apiPath, createGitHub, remember } from "./github"
 import { BRANCH_FORMAT, LOG_FORMAT, parseBranches, parseIssues, parseItem, parseLog, parseRemote, parseStatus, parseWorktrees, FIELD } from "./git"
 
 const ISSUE_FIELDS = "number,title,state,url,author,labels,assignees,updatedAt"
+// How long the token read from gh is used before it is read again; a 401 reads it again at once.
+// How long a checkout's folders, remote and default branch are reused before git is asked again.
+const FACTS_TTL = 60_000
+// How long the open pull request list for branch badges is used before a background refresh.
+const OPEN_PULLS_TTL = 2 * 60_000
+const TOKEN_TTL = 30 * 60_000
 const ITEM_FIELDS = "number,title,state,url,author,labels,assignees,updatedAt,createdAt,body,comments,milestone"
 const PR_FIELDS = `${ITEM_FIELDS},isDraft,headRefName,baseRefName,isCrossRepository,additions,deletions,changedFiles,reviewDecision,mergeable,statusCheckRollup,headRefOid,reviewRequests`
 const PULL_TTL = 60_000
@@ -122,7 +128,70 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
   // A question whose failure is an answer, such as a ref that does not exist: empty output, and nothing logged.
   const probe = (cwd: string, args: readonly string[], signal?: AbortSignal) => run("git", args, cwd, { signal, quiet: true }).catch(() => "")
 
+  // GitHub over HTTPS with the token gh keeps, on one kept-alive connection: a gh process per request costs a process
+  // start and a new TLS handshake, about half a second each on Windows. Without a token (gh signed out, or a gh too old
+  // for `auth token`) the callers fall back to gh itself.
+  const token: { value?: Promise<string | null>; at: number } = { at: 0 }
+  const githubToken = () => {
+    if (!token.value || Date.now() - token.at > TOKEN_TTL) {
+      token.at = Date.now()
+      token.value = run("gh", ["auth", "token"], homedir(), { quiet: true }).then(
+        (output) => output.trim() || null,
+        () => null,
+      )
+    }
+    return token.value
+  }
+  const https = async (path: string, init: { method?: string; body?: string; signal?: AbortSignal }, retried = false): Promise<string | undefined> => {
+    const secret = await githubToken()
+    if (!secret) return undefined
+    const response = await fetch(`https://api.github.com/${path}`, {
+      method: init.method ?? "GET",
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "opencode-github-panel",
+        ...(init.body ? { "Content-Type": "application/json" } : {}),
+      },
+      body: init.body,
+      signal: init.signal,
+    })
+    // A token gh has since replaced (signed in again, refreshed): read it again once.
+    if (response.status === 401 && !retried) {
+      token.value = undefined
+      return https(path, init, true)
+    }
+    const text = await response.text()
+    if (response.ok) return text
+    const detail = (() => {
+      try {
+        // SAFETY: GitHub's error bodies carry `message`; anything else is shown as text.
+        return (JSON.parse(text) as { message?: string }).message ?? text
+      } catch {
+        return text
+      }
+    })()
+    throw new Error(`GitHub: ${detail.slice(0, 500) || response.statusText} (HTTP ${response.status})`)
+  }
+  /** A GraphQL query; throws on errors, as `gh api graphql` does. */
+  const graphql = async (query: string, variables: Record<string, string | number>, signal?: AbortSignal): Promise<string> => {
+    const direct = await https("graphql", { method: "POST", body: JSON.stringify({ query, variables }), signal })
+    if (direct === undefined)
+      return gh(
+        homedir(),
+        ["api", "graphql", "-f", `query=${query}`, ...Object.entries(variables).flatMap(([key, value]) => [typeof value === "number" ? "-F" : "-f", `${key}=${value}`])],
+        signal,
+      )
+    // SAFETY: GraphQL responses carry `errors` as a list of messages when something failed.
+    const errors = (JSON.parse(direct) as { errors?: { message: string }[] }).errors
+    if (errors?.length) throw new Error(errors.map((error) => error.message).join("\n"))
+    return direct
+  }
+  /** A REST read, raw JSON; gh when there is no token. */
+  const rest = async (path: string, signal?: AbortSignal) => (await https(path, { signal })) ?? gh(homedir(), ["api", path], signal)
+
   const mutate = <T>(cwd: string, work: () => Promise<T>, remote = false) => {
+    facts.clear()
     const next = (queues.get(cwd) ?? Promise.resolve()).then(work, work)
     const settled = next.catch(() => undefined)
     queues.set(cwd, settled)
@@ -147,7 +216,21 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
   const batched = (cwd: string, paths: readonly string[], args: (batch: string[]) => readonly string[]) =>
     batches(paths.map(pathspec)).reduce<Promise<string>>((previous, batch) => previous.then(() => git(cwd, args(batch))), Promise.resolve(""))
 
-  const remote = async (cwd: string) => {
+  // What rarely changes about a checkout, asked on every poll: its folders, GitHub remote and default branch. Each is a git
+  // process, slow on Windows; they are kept for a while, and dropped by any write through the panel.
+  const facts = new Map<string, { at: number; value: Promise<unknown> }>()
+  const fact = <T>(key: string, read: () => Promise<T>): Promise<T> => {
+    const known = facts.get(key)
+    if (known && Date.now() - known.at < FACTS_TTL) return known.value as Promise<T>
+    const value = read()
+    facts.set(key, { at: Date.now(), value })
+    // A failed read is asked again next time.
+    void value.catch(() => facts.delete(key))
+    return value
+  }
+
+  const remote = (cwd: string) => fact(`remote:${cwd}`, () => readRemote(cwd))
+  const readRemote = async (cwd: string) => {
     const names = (await probe(cwd, ["remote"])).split("\n").filter(Boolean)
     const ordered = [...names.filter((name) => name === "origin"), ...names.filter((name) => name !== "origin")]
     for (const name of ordered) {
@@ -162,7 +245,8 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
   const repoOf = async (cwd: string, repo: string | null) =>
     repo ?? (await remote(cwd).then((found) => (found ? `${found.owner}/${found.repo}` : null)))
 
-  const defaultBranch = async (cwd: string, remoteName: string | undefined) => {
+  const defaultBranch = (cwd: string, remoteName: string | undefined) => fact(`default:${cwd}:${remoteName ?? ""}`, () => readDefaultBranch(cwd, remoteName))
+  const readDefaultBranch = async (cwd: string, remoteName: string | undefined) => {
     if (remoteName) {
       const symbolic = (await probe(cwd, ["symbolic-ref", "--short", `refs/remotes/${remoteName}/HEAD`])).trim()
       if (symbolic) return symbolic.slice(remoteName.length + 1)
@@ -185,17 +269,39 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
 
   // Every variable is a string, passed raw with -f: a branch name never reaches the query text.
   const queryPulls = (cwd: string, body: string, variables: Record<string, string>, signal?: AbortSignal) =>
-    gh(
-      cwd,
-      ["api", "graphql", "-f", `query=${body}`, ...Object.entries(variables).flatMap(([key, value]) => ["-f", `${key}=${value}`])],
-      signal,
-    ).then((output) => {
+    graphql(body, variables, signal).then((output) => {
       // SAFETY: the queries select PULL_FRAGMENT fields under connections with `nodes`.
       const data = (JSON.parse(output) as { data: Record<string, unknown> }).data
       return pullNodes(data)
     })
 
-  const readPulls = async (cwd: string, signal?: AbortSignal): Promise<Pulls> => {
+  // The repository's open pull requests, for branch badges: GitHub takes seconds to list them, so the last list is used
+  // while a new one loads in the background, and the next read picks it up.
+  const openPulls = new Map<string, { at: number; value: readonly PullRequest[]; loading?: Promise<void> }>()
+  const openPullsOf = (cwd: string, owner: { owner: string; name: string }, key: string, fresh: boolean) => {
+    const known = openPulls.get(key) ?? { at: 0, value: [] }
+    openPulls.set(key, known)
+    if (!known.loading && (fresh || Date.now() - known.at > OPEN_PULLS_TTL))
+      known.loading = queryPulls(
+        cwd,
+        `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){pullRequests(states:OPEN,first:50,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{${PULL_FRAGMENT}}}}}`,
+        owner,
+      ).then(
+        (value) => {
+          const first = known.at === 0
+          openPulls.set(key, { at: Date.now(), value })
+          pulls.clear()
+          // Windows that read pull requests before the list arrived read them again.
+          if (first) deps.emit("changed", { cwd, pulls: true })
+        },
+        () => {
+          known.loading = undefined
+        },
+      )
+    return known
+  }
+
+  const readPulls = async (cwd: string, signal?: AbortSignal, fresh = false): Promise<Pulls> => {
     const repo = await remote(cwd)
     if (!repo) return { error: "No GitHub remote found for this repository.", items: [] }
     const name = `${repo.owner}/${repo.repo}`
@@ -204,6 +310,7 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
     const owner = { owner: repo.owner, name: repo.repo }
     // Small requests in parallel: on a busy repository one big query times out, and one slow part should not hold the
     // others. Only the current branch's and the user's own pull requests carry their check state.
+    openPullsOf(cwd, owner, name, fresh)
     const results = await Promise.allSettled([
       branch
         ? query(
@@ -214,10 +321,7 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
       query(`query($q:String!){search(query:$q,type:ISSUE,first:30){nodes{... on PullRequest{${PULL_FRAGMENT} ${ROLLUP}}}}}`, {
         q: `repo:${name} is:pr author:@me sort:updated-desc`,
       }),
-      query(
-        `query($owner:String!,$name:String!){repository(owner:$owner,name:$name){pullRequests(states:OPEN,first:50,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{${PULL_FRAGMENT}}}}}`,
-        owner,
-      ),
+      Promise.resolve(openPulls.get(name)?.value ?? []),
     ])
     const failure = results.find((result) => result.status === "rejected")
     if (results.every((result) => result.status === "rejected")) return { error: ghError(failure?.reason), items: [] }
@@ -294,8 +398,8 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
   const home = homedir()
 
   const readItem = async (repo: string, number: number): Promise<Item> => {
-    const kind = (await gh(home, ["api", apiPath(repo, `issues/${number}`), "--jq", "if .pull_request then \"pr\" else \"issue\" end"])).trim()
-    const pr = kind === "pr"
+    // SAFETY: the issues endpoint answers pull requests too, with a `pull_request` field.
+    const pr = (JSON.parse(await rest(apiPath(repo, `issues/${number}`))) as { pull_request?: unknown }).pull_request !== undefined
     const view = (fields: string) => gh(home, [pr ? "pr" : "issue", "view", String(number), "--repo", repo, "--json", fields])
     // Older gh releases lack the closing-reference fields; the item reads without its links there.
     const output = await view(pr ? `${PR_FIELDS},closingIssuesReferences` : `${ITEM_FIELDS},stateReason,closedByPullRequestsReferences`).catch((error: unknown) => {
@@ -328,6 +432,8 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
 
   const github = createGitHub({
     gh: (args) => gh(home, args),
+    graphql: (query, variables) => graphql(query, variables),
+    rest: (path) => rest(path),
     ghInput: (args, input) => run("gh", args, home, { input }),
     changed: itemChanged,
     runChanged: (repo, id) => deps.emit("run", { repo, id }),
@@ -365,12 +471,24 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
     inbox: github.inbox,
     markRead: github.markRead,
     overview: async ({ cwd }, caller) => {
-      const top = await probe(cwd, ["rev-parse", "--show-toplevel", "--absolute-git-dir"], caller.signal)
-      const [root, gitDir] = top.trim().split(/\r?\n/)
-      if (!root || !gitDir) return null
-      const [status, stash, repo] = await Promise.all([
+      const folders = await fact(`folders:${cwd}`, async () => {
+        const top = (await probe(cwd, ["rev-parse", "--show-toplevel", "--absolute-git-dir", "--git-common-dir"], caller.signal)).trim().split(/\r?\n/)
+        const [root, gitDir, common] = top
+        if (!root || !gitDir) return null
+        return { root, gitDir, common: !common ? gitDir : isAbsolute(common) ? common : join(cwd, common) }
+      })
+      // A checkout removed or moved since: ask again.
+      if (folders && !existsSync(folders.gitDir)) facts.delete(`folders:${cwd}`)
+      if (!folders || !existsSync(folders.gitDir)) return null
+      const root = folders.root
+      const gitDir = folders.gitDir
+      const [status, stashes, repo] = await Promise.all([
         git(cwd, ["status", "--porcelain=v2", "--branch", "-z"], caller.signal),
-        probe(cwd, ["stash", "list", "--format=%H"], caller.signal),
+        // The stash reflog has a line per stash, so no git process; a worktree shares its repository's.
+        readFile(join(folders.common, "logs", "refs", "stash"), "utf8").then(
+          (text) => text.split("\n").filter(Boolean).length,
+          () => 0,
+        ),
         remote(cwd),
       ])
       const parsed = parseStatus(status)
@@ -385,7 +503,7 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
         remote: repo,
         defaultBranch: await defaultBranch(cwd, repo?.name),
         operation: operation(gitDir),
-        stashes: stash.split("\n").filter(Boolean).length,
+        stashes,
         files: parsed.files,
       }
     },
@@ -442,7 +560,7 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
     pulls: ({ cwd, fresh }) => {
       const cached = pulls.get(cwd)
       if (!fresh && cached && Date.now() - cached.time < PULL_TTL) return cached.value
-      const value = readPulls(cwd)
+      const value = readPulls(cwd, undefined, fresh)
       remember(pulls, cwd, { time: Date.now(), value }, 20)
       // A failure is not worth keeping: signing in to gh or a network blip should not wait out the TTL.
       void value.then((result) => {

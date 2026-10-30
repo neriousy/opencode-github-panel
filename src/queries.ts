@@ -253,6 +253,7 @@ export function createQueries(git: GitClient) {
   }
   git.on("item", (changed) => itemChanged(changed, changed.state ? { state: changed.state, reason: changed.reason } : undefined))
   git.on("changed", (changed) => {
+    if (changed.pulls) return invalidate(["pulls"])
     invalidate(["git"])
     if (!changed.remote) return
     invalidate(["pulls"])

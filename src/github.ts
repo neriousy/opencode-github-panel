@@ -25,6 +25,10 @@ const REVIEWS_QUERY = `query($owner:String!,$name:String!,$number:Int!){reposito
     comments(first:100){nodes{id author{login} body createdAt diffHunk}}}}}}}`
 
 interface Deps {
+  /** A GraphQL query over the backend's HTTPS connection (or gh without a token); throws on errors. */
+  graphql(query: string, variables: Record<string, string | number>): Promise<string>
+  /** A REST read's raw JSON, the same way. */
+  rest(path: string): Promise<string>
   /** Runs gh with --repo style arguments; it never reads the repository in the directory. */
   gh(args: readonly string[]): Promise<string>
   /** Runs gh with `input` on its standard input, for request bodies that are more than flat fields. */
@@ -95,41 +99,40 @@ export function createGitHub(deps: Deps) {
     )
   }
 
-  const graphql = (query: string, variables: Record<string, string | number>) =>
-    gh([
-      "api",
-      "graphql",
-      "-f",
-      `query=${query}`,
-      ...Object.entries(variables).flatMap(([key, value]) => [typeof value === "number" ? "-F" : "-f", `${key}=${value}`]),
-    ])
+  const graphql = deps.graphql
 
   const readInbox = async (): Promise<Inbox> => {
-    const search = (args: readonly string[], kind: "issue" | "pr", reason: string) =>
-      gh(["search", kind === "pr" ? "prs" : "issues", ...args, "--state", "open", "--limit", "30", "--json", "number,title,repository,url,updatedAt"]).then(
-        (output) => {
-          // SAFETY: gh returns the fields requested with --json.
-          const items = JSON.parse(output || "[]") as { number: number; title: string; repository: { nameWithOwner: string }; url: string; updatedAt: string }[]
-          return items.map(
-            (item): InboxEntry => ({
-              thread: null,
-              repo: item.repository.nameWithOwner,
-              number: item.number,
-              kind,
-              title: item.title,
-              reason,
-              updated: item.updatedAt,
-              unread: false,
-              url: item.url,
-            }),
-          )
-        },
-      )
+    // One GraphQL search each over the backend's connection, rather than a gh process per search.
+    const search = (qualifiers: string, kind: "issue" | "pr", reason: string) =>
+      graphql(
+        `query($q:String!){search(query:$q,type:ISSUE,first:30){nodes{... on Issue{number title url updatedAt repository{nameWithOwner}} ... on PullRequest{number title url updatedAt repository{nameWithOwner}}}}}`,
+        { q: `is:open ${kind === "pr" ? "is:pr" : "is:issue"} ${qualifiers} sort:updated-desc` },
+      ).then((output) => {
+        // SAFETY: the query selects these fields on every node; nodes the token cannot read come back null.
+        const nodes = (JSON.parse(output) as { data: { search: { nodes: ({ number: number; title: string; url: string; updatedAt: string; repository: { nameWithOwner: string } } | null)[] } } }).data.search.nodes
+        return nodes.flatMap((item): InboxEntry[] =>
+          item?.number
+            ? [
+                {
+                  thread: null,
+                  repo: item.repository.nameWithOwner,
+                  number: item.number,
+                  kind,
+                  title: item.title,
+                  reason,
+                  updated: item.updatedAt,
+                  unread: false,
+                  url: item.url,
+                },
+              ]
+            : [],
+        )
+      })
     const results = await Promise.allSettled([
-      gh(["api", "notifications?per_page=50"]).then(parseNotifications),
-      search(["--review-requested=@me"], "pr", "review_requested"),
-      search(["--assignee=@me"], "issue", "assign"),
-      search(["--author=@me"], "pr", "author"),
+      deps.rest("notifications?per_page=50").then(parseNotifications),
+      search("review-requested:@me", "pr", "review_requested"),
+      search("assignee:@me", "issue", "assign"),
+      search("author:@me", "pr", "author"),
     ])
     const [notifications, reviews, assigned, authored] = results.map((result) => (result.status === "fulfilled" ? result.value : []))
     const failure = results.find((result) => result.status === "rejected")
