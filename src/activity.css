@@ -43,7 +43,7 @@
 
   &[data-active] {
     border-inline-start-color: var(--v2-text-text-accent, #0969da);
-    background: var(--v2-overlay-simple-overlay-hover);
+    background: var(--ghp-row-hover);
   }
 }
 

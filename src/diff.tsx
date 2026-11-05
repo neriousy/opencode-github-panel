@@ -1,7 +1,7 @@
 import { createMemo, createSignal, For, Show, type JSX } from "solid-js"
 import { usePlugin } from "@opencode/plugin/gui"
 import type { ChangedFile, DraftComment, Thread } from "./contract"
-import { Chevron, Group, type Folds } from "./fold"
+import { Chevron, type Folds } from "./fold"
 import { parsePatch, type DiffLine } from "./git"
 
 const LINE_LIMIT = 1500
@@ -40,6 +40,14 @@ export function DiffList(props: {
   // A file the draft review comments on starts open, large or not.
   const drafted = (file: ChangedFile) => (props.drafts ?? []).some((comment) => comment.path === file.path)
   const open = (file: ChangedFile) => !props.folds.folded(file.path, !!props.viewed?.has(file.path) || (props.files.length > 1 && large(file) && !drafted(file)))
+  const index = () => props.folds.flag("index", false)
+  // A pull request's header already says its size; its files say how far the review got.
+  const summary = () => {
+    const files = ctx.plural("item.files", props.files.length)
+    const viewed = props.viewed
+    if (viewed) return `${files} · ${t("view.viewedSome", { count: props.files.filter((file) => viewed.has(file.path)).length })}`
+    return `${files} · +${props.files.reduce((sum, file) => sum + file.additions, 0)} −${props.files.reduce((sum, file) => sum + file.deletions, 0)}`
+  }
   const jump = (file: ChangedFile) => {
     props.folds.fold(file.path, false)
     requestAnimationFrame(() => {
@@ -50,21 +58,15 @@ export function DiffList(props: {
   }
   return (
     <div class="ghp-files">
-      <div class="ghp-bar">
-        <span class="ghp-faint ghp-ellipsis">
-          {/* A pull request's header already says its size; its files say how far the review got. */}
-          <Show
-            when={props.viewed}
-            fallback={
-              <>
-                {ctx.plural("item.files", props.files.length)} · <span class="ghp-add">+{props.files.reduce((sum, file) => sum + file.additions, 0)}</span>{" "}
-                <span class="ghp-del">−{props.files.reduce((sum, file) => sum + file.deletions, 0)}</span>
-              </>
-            }
-          >
-            {(viewed) => t("view.viewedCount", { count: props.files.filter((file) => viewed().has(file.path)).length, total: props.files.length })}
-          </Show>
-        </span>
+      {/* One row says how many files and how many viewed; its chevron opens the index, which starts closed: every file's
+          card below already shows its path and size. */}
+      <div class="ghp-bar ghp-files-bar">
+        <Show when={props.files.length > 1} fallback={<span class="ghp-faint ghp-ellipsis">{summary()}</span>}>
+          <button type="button" class="ghp-findex-toggle" aria-expanded={index()} onClick={() => props.folds.setFlag("index", !index())}>
+            <Chevron open={index()} />
+            <span class="ghp-ellipsis">{summary()}</span>
+          </button>
+        </Show>
         <div class="ghp-spacer" />
         <Show when={props.files.length > 1}>
           <ui.Button
@@ -78,14 +80,8 @@ export function DiffList(props: {
           </ui.Button>
         </Show>
       </div>
-      <Show when={props.files.length > 1}>
-        <Group
-          class="ghp-findex"
-          title={t("view.changedFiles")}
-          count={props.files.length}
-          open={props.folds.flag("index", props.files.length <= 25)}
-          onToggle={() => props.folds.setFlag("index", !props.folds.flag("index", props.files.length <= 25))}
-        >
+      <Show when={props.files.length > 1 && index()}>
+        <div class="ghp-findex">
           <For each={props.files}>
             {(file) => (
               <button type="button" class="ghp-findex-row" data-viewed={props.viewed?.has(file.path) ? "" : undefined} onClick={() => jump(file)}>
@@ -103,7 +99,7 @@ export function DiffList(props: {
               </button>
             )}
           </For>
-        </Group>
+        </div>
       </Show>
       <For each={props.files} fallback={<div class="ghp-empty ghp-empty-inline">{t("diff.none")}</div>}>
         {(file) => (

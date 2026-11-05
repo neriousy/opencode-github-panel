@@ -22,6 +22,8 @@
 }
 
 .ghp {
+  /* One quiet tint for every full-width row under the pointer; controls keep the app's own hover. */
+  --ghp-row-hover: color-mix(in srgb, var(--v2-text-text-base) 5%, transparent);
   container: ghp / inline-size;
   display: flex;
   flex-direction: column;
@@ -573,7 +575,7 @@
 
   &:hover,
   &:focus-visible {
-    background: var(--v2-overlay-simple-overlay-hover);
+    background: var(--ghp-row-hover);
   }
 
   &[data-open] {
@@ -664,7 +666,7 @@
 
   &:hover,
   &:focus-visible {
-    background: var(--v2-overlay-simple-overlay-hover);
+    background: var(--ghp-row-hover);
   }
 
   &[data-selected] {
@@ -944,7 +946,7 @@
   cursor: pointer;
 
   &[data-active] {
-    background: var(--v2-overlay-simple-overlay-hover);
+    background: var(--ghp-row-hover);
   }
 
   &[data-current] {
@@ -1035,7 +1037,7 @@
   cursor: pointer;
 
   &:hover {
-    background: var(--v2-overlay-simple-overlay-hover);
+    background: var(--ghp-row-hover);
   }
 
   > input {
@@ -1087,7 +1089,7 @@
 
   &:hover,
   &:focus-visible {
-    background: var(--v2-overlay-simple-overlay-hover);
+    background: var(--ghp-row-hover);
   }
 
   &[data-current] {
@@ -1909,7 +1911,7 @@
   }
 
   &:hover:not(:disabled) {
-    background: var(--v2-overlay-simple-overlay-hover);
+    background: var(--ghp-row-hover);
   }
 }
 
@@ -1976,7 +1978,7 @@
   }
 
   &:hover {
-    background: var(--v2-overlay-simple-overlay-hover);
+    background: var(--ghp-row-hover);
   }
 
   &[data-selected] {

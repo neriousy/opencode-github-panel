@@ -241,8 +241,10 @@
   font-size: 12px;
   font-weight: 600;
 
-  &:hover {
-    background: var(--v2-overlay-simple-overlay-hover);
+  /* A fold toggle brightens rather than fills: a full-width grey bar on every header was louder than the content. */
+  &:hover,
+  &:hover .ghp-chevron {
+    color: var(--v2-text-text-base);
   }
 }
 
@@ -324,8 +326,10 @@
   font-size: 12px;
   white-space: nowrap;
 
-  &:hover {
-    background: var(--v2-overlay-simple-overlay-hover);
+  /* A fold toggle brightens rather than fills: a full-width grey bar on every header was louder than the content. */
+  &:hover,
+  &:hover .ghp-chevron {
+    color: var(--v2-text-text-base);
   }
 }
 
@@ -447,8 +451,10 @@
   font-size: 12px;
   white-space: nowrap;
 
-  &:hover {
-    background: var(--v2-overlay-simple-overlay-hover);
+  /* A fold toggle brightens rather than fills: a full-width grey bar on every header was louder than the content. */
+  &:hover,
+  &:hover .ghp-chevron {
+    color: var(--v2-text-text-base);
   }
 }
 
@@ -518,22 +524,48 @@
   padding: 0 0 8px;
 }
 
-.ghp-findex {
-  margin-bottom: 4px;
+/* The files row: its chevron sits on the gutter, like every other fold. */
+.ghp-files-bar {
+  padding-left: 8px;
 }
 
+.ghp-findex-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 24px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--v2-text-text-muted);
+  font: inherit;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--v2-overlay-simple-overlay-hover);
+    color: var(--v2-text-text-base);
+  }
+}
+
+.ghp-findex {
+  padding-bottom: 4px;
+}
+
+/* Index rows line their status up with the files row's text. */
 .ghp-findex-row {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
   min-height: 24px;
-  padding: 0 12px 0 28px;
+  padding: 0 12px 0 34px;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 
   &:hover {
-    background: var(--v2-overlay-simple-overlay-hover);
+    background: color-mix(in srgb, var(--v2-text-text-base) 5%, transparent);
   }
 
   &[data-viewed] .ghp-dfile-path {

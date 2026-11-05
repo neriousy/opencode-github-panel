@@ -280,7 +280,8 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Meta: fixed slots aligned on the right across rows; the row menu takes their place on hover or focus. */
+/* Meta: fixed slots aligned on the right across rows. On hover the row menu takes only the time's slot, so nothing else
+   in the row moves or disappears under the pointer. */
 
 .ghp-pr-meta {
   display: flex;
@@ -290,7 +291,6 @@
   color: var(--v2-text-text-faint);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  transition: opacity 80ms ease-out;
 }
 
 .ghp-pr-checks {
@@ -344,9 +344,8 @@
   position: absolute;
   top: 50%;
   right: 6px;
-  padding-left: 12px;
   transform: translateY(-50%);
-  background: linear-gradient(to right, transparent, var(--ghp-row-bg) 12px);
+  opacity: 0;
   pointer-events: none;
 }
 
@@ -357,10 +356,10 @@
   pointer-events: auto;
 }
 
-.ghp-list .ghp-pr:hover .ghp-pr-meta,
-.ghp-list .ghp-pr:focus-within .ghp-pr-meta,
-.ghp-list .ghp-results:focus-visible .ghp-pr[data-active] .ghp-pr-meta {
-  opacity: 0;
+.ghp-list .ghp-pr:hover .ghp-pr-time,
+.ghp-list .ghp-pr:focus-within .ghp-pr-time,
+.ghp-list .ghp-results:focus-visible .ghp-pr[data-active] .ghp-pr-time {
+  visibility: hidden;
 }
 
 @media (hover: none) {
@@ -368,10 +367,6 @@
     opacity: 1;
     pointer-events: auto;
   }
-}
-
-:root[data-motion="reduce"] .ghp-pr-meta {
-  transition: none;
 }
 
 .ghp-list .ghp-more {
@@ -415,7 +410,8 @@
   }
 }
 
-/* Multi-select: a checkbox takes the state icon's place on hover, on the active row, and on every row while some are picked. */
+/* Multi-select: a checkbox takes the state icon's place when the pointer is on the icon, on the keyboard's row, and on
+   every row while some are picked. Hovering elsewhere in a row leaves its icon alone. */
 
 .ghp-list .ghp-pr-state {
   position: relative;
@@ -452,14 +448,14 @@
   }
 }
 
-.ghp-list .ghp-pr:hover .ghp-pr-check,
+.ghp-list .ghp-pr-state:hover .ghp-pr-check,
 .ghp-list .ghp-pr[data-picked] .ghp-pr-check,
 .ghp-list .ghp-results[data-selecting] .ghp-pr-check,
 .ghp-list .ghp-results:focus-visible .ghp-pr[data-active] .ghp-pr-check {
   display: flex;
 }
 
-.ghp-list .ghp-pr:hover .ghp-pr-state > .ghp-pr-icon,
+.ghp-list .ghp-pr-state:hover > .ghp-pr-icon,
 .ghp-list .ghp-pr[data-picked] .ghp-pr-state > .ghp-pr-icon,
 .ghp-list .ghp-results[data-selecting] .ghp-pr-state > .ghp-pr-icon,
 .ghp-list .ghp-results:focus-visible .ghp-pr[data-active] .ghp-pr-state > .ghp-pr-icon {
