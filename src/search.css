@@ -17,104 +17,9 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 8px 8px 0;
+  padding: 6px 8px;
   background: var(--v2-background-bg-base);
   border-bottom: 1px solid var(--v2-border-border-muted);
-}
-
-.ghp-list-presets {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-width: 0;
-}
-
-.ghp-list .ghp-chips {
-  flex: 1;
-  flex-wrap: nowrap;
-  gap: 4px;
-  min-width: 0;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
-
-  &::-webkit-scrollbar {
-    display: none;
-  }
-
-  &[data-fade-start] {
-    mask-image: linear-gradient(to right, transparent, #000 20px);
-  }
-
-  &[data-fade-end] {
-    mask-image: linear-gradient(to left, transparent, #000 20px);
-  }
-
-  &[data-fade-start][data-fade-end] {
-    mask-image: linear-gradient(to right, transparent, #000 20px, #000 calc(100% - 20px), transparent);
-  }
-}
-
-.ghp-list .ghp-chip {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  white-space: nowrap;
-
-  &:focus-visible,
-  & :focus-visible {
-    outline: 2px solid var(--v2-border-border-focus);
-    outline-offset: -2px;
-  }
-}
-
-.ghp-chip-saved {
-  gap: 0;
-  padding: 0;
-  overflow: hidden;
-}
-
-.ghp-chip-label,
-.ghp-chip-remove {
-  height: 100%;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.ghp-chip-label {
-  padding: 0 10px;
-  border-radius: 12px;
-}
-
-.ghp-chip-remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 0;
-  padding: 0;
-  opacity: 0;
-  color: var(--v2-icon-icon-muted);
-  transition:
-    width 80ms ease-out,
-    opacity 80ms ease-out;
-
-  &:hover {
-    color: var(--v2-text-text-base);
-  }
-}
-
-.ghp-chip-saved:is(:hover, :focus-within) {
-  .ghp-chip-label {
-    padding-right: 2px;
-  }
-
-  .ghp-chip-remove {
-    width: 20px;
-    opacity: 1;
-  }
 }
 
 .ghp-list-toolbar {
@@ -233,33 +138,17 @@
   }
 }
 
-.ghp-list-summary {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  min-height: 30px;
-  color: var(--v2-text-text-muted);
-  font-size: 12px;
-}
-
-.ghp-list-count {
-  flex: 1;
-  font-variant-numeric: tabular-nums;
-}
-
-.ghp-list-new {
-  color: var(--ghp-list-accent);
-  font-weight: 500;
-}
-
-.ghp-list-save,
-.ghp-list-sort {
+/* The scope menu's trigger reads as a quiet text control, "Open · 1,455 ▾". */
+.ghp-list-scope {
   flex-shrink: 0;
+  max-width: 45%;
 }
 
-/* The sort menu's trigger reads as a quiet text control, "Newest ▾". */
-.ghp-list-sort [data-component="button-v2"] {
+.ghp-list-scope [data-component="button-v2"] {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   height: 24px;
   padding: 0 6px;
   border: 0;
@@ -481,7 +370,7 @@
   }
 }
 
-:root[data-motion="reduce"] :is(.ghp-pr-meta, .ghp-chip-remove) {
+:root[data-motion="reduce"] .ghp-pr-meta {
   transition: none;
 }
 

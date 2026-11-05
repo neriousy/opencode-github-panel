@@ -233,10 +233,6 @@ export function SearchList(props: { state: State; kind: Kind }) {
     if (Date.parse(item.updated) > last) return "updated" as const
     return undefined
   }
-  const counts = createMemo(() => {
-    const marks = items().map(freshness)
-    return { fresh: marks.filter((mark) => mark === "new").length, updated: marks.filter((mark) => mark === "updated").length }
-  })
 
   // Repository metadata, for label, people and milestone suggestions; loaded once the search field is used.
   const [wantMeta, setWantMeta] = createSignal(false)
@@ -610,6 +606,9 @@ export function SearchList(props: { state: State; kind: Kind }) {
   const moreItems = (): UiMenuEntry[] => {
     const entry = base().saved
     return [
+      { label: t("action.refresh"), icon: "refresh" as const, onSelect: () => void results.refetch() },
+      ...(props.kind === "issue" ? [{ label: t("issues.new"), icon: "plus" as const, onSelect: () => void s.actions.createIssue(s.cwd()) }] : []),
+      { type: "separator" as const },
       ...(savable() ? [{ label: t("list.save.action"), icon: "plus" as const, onSelect: () => void save() }] : []),
       ...(entry
         ? [
@@ -643,27 +642,33 @@ export function SearchList(props: { state: State; kind: Kind }) {
       draft.compactRows = value
     })
 
-  /* Preset chips scroll sideways, with faded edges where more is hidden. */
+  /* The list's scope: a preset or a saved search, picked from one menu that also says how many match. */
 
-  const [fade, setFade] = createSignal({ start: false, end: false })
-  const chipStrip = (element: HTMLDivElement) => {
-    const update = () =>
-      setFade({ start: element.scrollLeft > 1, end: element.scrollLeft + element.clientWidth < element.scrollWidth - 1 })
-    element.addEventListener("scroll", update, { passive: true })
-    element.addEventListener(
-      "wheel",
-      (event) => {
-        if (event.deltaX !== 0 || element.scrollWidth <= element.clientWidth) return
-        element.scrollLeft += event.deltaY
-        event.preventDefault()
-      },
-      { passive: false },
-    )
-    const observer = new ResizeObserver(update)
-    observer.observe(element)
-    onCleanup(() => observer.disconnect())
-    createEffect(on(() => saved().length, () => requestAnimationFrame(update)))
+  const scopeName = () => base().saved?.name ?? t(`search.${props.kind}.${base().id}`)
+  const scopeLabel = () => {
+    const count = total()
+    return count === undefined ? scopeName() : `${scopeName()} · ${count.toLocaleString()}`
   }
+  const scopeItems = (): UiMenuEntry[] => [
+    ...PRESETS[props.kind].map((item) => ({
+      label: t(`search.${props.kind}.${item.id}`),
+      icon: base().id === item.id ? ("check" as const) : undefined,
+      onSelect: () => choose(item.id),
+    })),
+    ...(saved().length > 0
+      ? [
+          {
+            type: "group" as const,
+            label: t("list.presets"),
+            items: saved().map((entry) => ({
+              label: entry.name,
+              icon: base().saved?.id === entry.id ? ("check" as const) : undefined,
+              onSelect: () => choose(`saved:${entry.id}`),
+            })),
+          },
+        ]
+      : []),
+  ]
 
   return (
     <div
@@ -678,42 +683,10 @@ export function SearchList(props: { state: State; kind: Kind }) {
       }}
     >
       <div class="ghp-list-head" ref={head}>
-        <div class="ghp-list-presets">
-          <div class="ghp-chips" role="group" aria-label={t("list.presets")} data-fade-start={fade().start ? "" : undefined} data-fade-end={fade().end ? "" : undefined} ref={chipStrip}>
-            <For each={PRESETS[props.kind]}>
-              {(item) => (
-                <button type="button" class="ghp-chip" aria-pressed={base().id === item.id} data-selected={base().id === item.id ? "" : undefined} onClick={() => choose(item.id)}>
-                  {t(`search.${props.kind}.${item.id}`)}
-                </button>
-              )}
-            </For>
-            <For each={saved()}>
-              {(entry) => (
-                <span class="ghp-chip ghp-chip-saved" data-selected={base().saved?.id === entry.id ? "" : undefined}>
-                  <button type="button" class="ghp-chip-label" aria-pressed={base().saved?.id === entry.id} title={entry.query} onClick={() => choose(`saved:${entry.id}`)}>
-                    {entry.name}
-                  </button>
-                  <button type="button" class="ghp-chip-remove" aria-label={t("list.delete.action", { name: entry.name })} onClick={() => remove(entry)}>
-                    <ui.Icon name="xmark-small" size="small" />
-                  </button>
-                </span>
-              )}
-            </For>
-          </div>
-          <Show when={results.isFetching && !results.isFetchingNextPage}>
-            <ui.Loader size="small" />
-          </Show>
-          <ui.Tooltip value={t("action.refresh")}>
-            <ui.IconButton icon="refresh" label={t("action.refresh")} size="small" variant="ghost" onClick={() => void results.refetch()} />
-          </ui.Tooltip>
-          <Show when={props.kind === "issue"}>
-            <ui.Tooltip value={t("issues.new")}>
-              <ui.IconButton icon="plus" label={t("issues.new")} size="small" variant="ghost" onClick={() => void s.actions.createIssue(s.cwd())} />
-            </ui.Tooltip>
-          </Show>
-        </div>
-
         <div class="ghp-list-toolbar">
+          <div class="ghp-list-scope">
+            <ui.Menu label={scopeLabel()} trigger="button" placement="bottom-start" items={scopeItems()} />
+          </div>
           <div class="ghp-search" ref={searchBox}>
             <ui.TextInput
               class="ghp-search-input"
@@ -752,6 +725,10 @@ export function SearchList(props: { state: State; kind: Kind }) {
               </div>
             </Show>
           </div>
+          <Show when={results.isFetching && !results.isFetchingNextPage}>
+            <ui.Loader size="small" />
+          </Show>
+          <ui.Menu label={`${t("list.sort")}: ${sortLabel()}`} trigger="icon" icon="selector" placement="bottom-end" items={sortItems()} />
           <ui.Menu label={t("list.filter")} trigger="icon" icon="outline-sliders" placement="bottom-end" items={filterItems()} />
           <ui.Menu label={t("action.more")} trigger="icon" icon="outline-dots" placement="bottom-end" items={moreItems()} />
         </div>
@@ -779,30 +756,7 @@ export function SearchList(props: { state: State; kind: Kind }) {
           </div>
         </Show>
 
-        <Show
-          when={picked().length > 0 && repo()}
-          fallback={
-            <div class="ghp-list-summary">
-              <span class="ghp-list-count ghp-ellipsis">
-                <Show when={total() !== undefined}>{ctx.plural(`search.count.${props.kind}`, total() ?? 0)}</Show>
-                <Show when={counts().fresh > 0}>
-                  <span class="ghp-list-new"> · {t("list.newCount", { count: counts().fresh })}</span>
-                </Show>
-                <Show when={counts().updated > 0}>
-                  <span class="ghp-faint"> · {t("list.updatedCount", { count: counts().updated })}</span>
-                </Show>
-              </span>
-              <Show when={savable()}>
-                <ui.Button size="small" variant="ghost" icon="plus-small" class="ghp-list-save" onClick={() => void save()}>
-                  {t("list.save.short")}
-                </ui.Button>
-              </Show>
-              <div class="ghp-list-sort" title={t("list.sort")}>
-                <ui.Menu label={sortLabel()} trigger="button" placement="bottom-end" items={sortItems()} />
-              </div>
-            </div>
-          }
-        >
+        <Show when={picked().length > 0 && repo()}        >
           {(name) => <BulkBar state={s} kind={props.kind} repo={name()} items={picked()} loaded={items().length} onClear={clearSelection} onSelectAll={selectAll} />}
         </Show>
       </div>
