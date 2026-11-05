@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, Match, onMount, Show, Switch, type Accessor, type JSX } from "solid-js"
 import { createKeyed, usePanel, usePlugin, type Context, type MountedSession, type UiMenuEntry } from "@opencode/plugin/gui"
-import { errorMessage, repoOf, type Actions } from "./actions"
+import { allowed, errorMessage, repoOf, type Actions } from "./actions"
 import { ActivityView } from "./activity"
 import { openBranchPicker } from "./branches"
 import { fileContext } from "./context"
@@ -690,7 +690,7 @@ function BranchStrip(props: { state: State }) {
           }),
       }
     const mergeable = item.latest?.number === current.number && item.latest.pr?.mergeable === "MERGEABLE"
-    if (mergeable && checkState() !== "failure" && checkState() !== "pending" && current.review !== "CHANGES_REQUESTED")
+    if (mergeable && allowed(current, "merge") && allowed(item.latest, "merge") && checkState() !== "failure" && checkState() !== "pending" && current.review !== "CHANGES_REQUESTED")
       return {
         label: t("action.mergePr"),
         icon: "fork",

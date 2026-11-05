@@ -1,4 +1,4 @@
-import type { Branch, Check, Commit, FileChange, Issue, Item, ItemRef, Label, PullRequest, Pulls, Ref, Remote } from "./schemas"
+import type { Branch, Can, Check, Commit, FileChange, Issue, Item, ItemRef, Label, PullRequest, Pulls, Ref, Remote } from "./schemas"
 
 export const FIELD = "\x1f"
 export const RECORD = "\x1e"
@@ -320,7 +320,23 @@ interface GhReference {
   readonly repository?: { readonly name?: string; readonly owner?: { readonly login?: string } }
 }
 
-const ITEM_COMMON = `number title state url author{login} labels(first:50){nodes{name color}} assignees(first:20){nodes{login}} updatedAt createdAt body milestone{title} comments(last:100){nodes{author{login} body createdAt}}`
+/** The fields `viewerCan` reads, for any issue or pull request node. */
+export const VIEWER_FIELDS = "viewerCanClose viewerCanReopen repository{viewerPermission}"
+
+/** What the signed-in user may do with a node that selected VIEWER_FIELDS; merging takes push access to the base. */
+export function viewerCan(
+  node: { readonly viewerCanClose?: boolean; readonly viewerCanReopen?: boolean; readonly repository?: { readonly viewerPermission?: string | null } },
+  pr: boolean,
+): Can | undefined {
+  if (node.viewerCanClose === undefined) return undefined
+  return {
+    close: node.viewerCanClose,
+    reopen: node.viewerCanReopen === true,
+    merge: pr && ["ADMIN", "MAINTAIN", "WRITE"].includes(node.repository?.viewerPermission ?? ""),
+  }
+}
+
+const ITEM_COMMON = `${VIEWER_FIELDS} number title state url author{login} labels(first:50){nodes{name color}} assignees(first:20){nodes{login}} updatedAt createdAt body milestone{title} comments(last:100){nodes{author{login} body createdAt}}`
 const REFERENCE = "nodes{number repository{name owner{login}}}"
 
 /** One issue or pull request with its conversation, in one GraphQL request. */
@@ -343,12 +359,16 @@ export interface GqlItem extends Omit<GhItem, "labels" | "assignees" | "comments
   readonly commits?: Nodes<{ readonly commit: { readonly statusCheckRollup: { readonly contexts: Nodes<GhCheck> } | null } }>
   readonly closingIssuesReferences?: Nodes<GhReference>
   readonly closedByPullRequestsReferences?: Nodes<GhReference>
+  readonly viewerCanClose?: boolean
+  readonly viewerCanReopen?: boolean
+  readonly repository?: { readonly viewerPermission?: string | null }
 }
 
 /** Reads ITEM_QUERY's node into an item. */
 export function parseGqlItem(repo: string, node: GqlItem): Item {
   const nodes = <T>(list: Nodes<T>) => (list?.nodes ?? []).flatMap((item) => (item ? [item] : []))
-  return parseItem(node.__typename === "PullRequest" ? "pr" : "issue", repo, {
+  const can = viewerCan(node, node.__typename === "PullRequest")
+  const item = parseItem(node.__typename === "PullRequest" ? "pr" : "issue", repo, {
     ...node,
     labels: nodes(node.labels),
     assignees: nodes(node.assignees),
@@ -358,6 +378,7 @@ export function parseGqlItem(repo: string, node: GqlItem): Item {
     closingIssuesReferences: node.closingIssuesReferences ? nodes(node.closingIssuesReferences) : undefined,
     closedByPullRequestsReferences: node.closedByPullRequestsReferences ? nodes(node.closedByPullRequestsReferences) : undefined,
   })
+  return can ? { ...item, can } : item
 }
 
 /** Reads gh's `issue view --json …` or `pr view --json …` shape into one item. */

@@ -32,11 +32,83 @@
 
 .ghp-item-header {
   gap: 6px;
-  padding: 10px 12px;
+  padding: 12px;
 }
 
-.ghp-item-header > .ghp-item-actions {
-  padding-top: 2px;
+.ghp-item-title {
+  margin: 0;
+}
+
+.ghp-item-meta {
+  align-items: center;
+}
+
+/* "author wants to merge head → base": the branches as quiet code, cut short when long. */
+.ghp-item-merge {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+
+  code {
+    max-width: 100%;
+    padding: 0 5px;
+    overflow: hidden;
+    border-radius: 4px;
+    background: var(--v2-background-bg-layer-02);
+    color: var(--v2-text-text-base);
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+    line-height: 18px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* A pull request's facts on one line, dots between; colour only where something needs attention. */
+.ghp-item-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 2px;
+  color: var(--v2-text-text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+
+  > * + *::before {
+    content: "·";
+    margin-inline: 6px;
+    color: var(--v2-text-text-faint);
+  }
+}
+
+.ghp-fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+
+  &:is(button) {
+    cursor: pointer;
+
+    &:hover {
+      color: var(--v2-text-text-base);
+    }
+  }
+
+  &[data-mergeable="CONFLICTING"],
+  &[data-review="CHANGES_REQUESTED"] {
+    color: var(--ghp-closed);
+  }
+
+  &[data-review="APPROVED"] {
+    color: var(--ghp-open);
+  }
 }
 
 /* An issue's branches and pull requests, one row. */
@@ -93,7 +165,8 @@
   align-items: center;
   height: var(--ghp-item-tabs);
   margin-top: 0;
-  padding: 0 8px;
+  /* Tabs pad themselves by 8px: their text lines up with the 12px gutter. */
+  padding: 0 4px;
   border-top: 0;
 }
 
@@ -187,7 +260,7 @@
 
 .ghp-entry {
   min-width: 0;
-  padding: 6px 12px 8px;
+  padding: 8px 12px;
   border-top: var(--ghp-divider);
   font-size: 13px;
   overflow-wrap: anywhere;
@@ -220,6 +293,10 @@
   font-weight: 600;
 }
 
+.ghp-entry-label {
+  color: var(--v2-text-text-muted);
+}
+
 .ghp-entry-summary {
   flex: 1;
   color: var(--v2-text-text-muted);
@@ -238,10 +315,6 @@
   font-size: 12px;
 }
 
-.ghp-note[data-folded] {
-  padding-bottom: 6px;
-}
-
 .ghp-note[data-bot] .ghp-entry-author {
   color: var(--v2-text-text-muted);
 }
@@ -252,7 +325,7 @@
   align-items: center;
   gap: 6px;
   min-height: 24px;
-  padding-block: 4px;
+  padding-block: 6px;
   font-size: 12px;
   white-space: nowrap;
 
@@ -636,27 +709,6 @@
 /* Draft reviews: the agent's or the user's review waiting to be submitted. Drafts are tinted with the accent lane and
    marked "Draft"; they sit between the diff lines like threads, and the bar under the files holds the verdict, the
    summary and Submit. */
-
-.ghp-draft-banner {
-  flex-direction: column;
-  align-items: stretch;
-  margin: 8px 12px 0;
-  padding: 6px 8px;
-  background: color-mix(in srgb, var(--ghp-lane-0) 12%, transparent);
-}
-
-.ghp-draft-banner-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 6px;
-  min-width: 0;
-}
-
-.ghp-draft-note {
-  padding-inline-start: 22px;
-  color: var(--v2-text-text-muted);
-}
 
 .ghp-draft-pill {
   border: 1px dashed color-mix(in srgb, var(--ghp-lane-0) 60%, transparent);

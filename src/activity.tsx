@@ -359,35 +359,43 @@ export function AgentBanner(props: { item: ItemRef; session: MountedSession; act
     (data.latest?.actions ?? []).filter((action) => action.status === "proposed" && action.repo === props.item.repo && action.number === props.item.number)
   return (
     <For each={proposals()}>
-      {(action) => (
-        <div class="ghp-banner ghp-agent-banner">
-          <div class="ghp-agent-banner-line">
-            <ui.Icon name="brain" size="small" />
-            <span class="ghp-grow">
-              <b>{t("activity.proposes")}:</b> {describeAction(t, action)}
-            </span>
-            <ui.Button size="small" variant="contrast" icon="check" onClick={() => void props.actions.agent.decide(props.session.id, [action.id], "approve")}>
-              {t("activity.approve")}
-            </ui.Button>
-            <ui.Button size="small" variant="ghost" icon="edit" onClick={() => editAction(ctx, props.actions, action)}>
-              {t("activity.edit")}
-            </ui.Button>
-            <ui.Button size="small" variant="ghost" onClick={() => void props.actions.agent.decide(props.session.id, [action.id], "skip")}>
-              {t("activity.discard")}
-            </ui.Button>
+      {(action) => {
+        const [open, setOpen] = createSignal(false)
+        return (
+          <div class="ghp-dock" data-tone="agent">
+            <div class="ghp-dock-line">
+              <span class="ghp-dock-icon">
+                <ui.Icon name="brain" size="small" />
+              </span>
+              <span class="ghp-grow ghp-ellipsis">
+                <b>{t("activity.proposes")}:</b> {describeAction(t, action)}
+              </span>
+              <ui.Button size="small" variant="ghost" onClick={() => void props.actions.agent.decide(props.session.id, [action.id], "skip")}>
+                {t("activity.discard")}
+              </ui.Button>
+              <ui.Button size="small" variant="ghost" icon="edit" onClick={() => editAction(ctx, props.actions, action)}>
+                {t("activity.edit")}
+              </ui.Button>
+              <ui.Button size="small" variant="contrast" icon="check" onClick={() => void props.actions.agent.decide(props.session.id, [action.id], "approve")}>
+                {t("activity.approve")}
+              </ui.Button>
+            </div>
+            <Show when={action.note}>
+              <div class="ghp-dock-note ghp-ellipsis" title={action.note}>
+                {action.note}
+              </div>
+            </Show>
+            <Show when={action.payload.body}>
+              {(body) => (
+                // The comment it would post: one line until clicked.
+                <button type="button" class="ghp-dock-text" data-open={open() ? "" : undefined} aria-expanded={open()} onClick={() => setOpen(!open())}>
+                  {body()}
+                </button>
+              )}
+            </Show>
           </div>
-          <Show when={action.note}>
-            <div class="ghp-activity-note">{action.note}</div>
-          </Show>
-          <Show when={action.payload.body}>
-            {(body) => (
-              <Clamp lines={3}>
-                <div class="ghp-activity-text">{body()}</div>
-              </Clamp>
-            )}
-          </Show>
-        </div>
-      )}
+        )
+      }}
     </For>
   )
 }

@@ -9,6 +9,10 @@ import type { Branch, Item, ItemRef, Overview, PullRequest } from "./contract"
 type CloseReason = "completed" | "not_planned" | "duplicate"
 import type { definition } from "./definition"
 import { issueBranchName, issueFromBranch, pullFor, withClosing } from "./git"
+import type { Can } from "./schemas"
+
+/** Whether GitHub lets the signed-in user do this. Unknown counts as yes: GitHub then refuses what is not allowed. */
+export const allowed = (item: { readonly can?: Can } | undefined, what: keyof Can) => item?.can?.[what] !== false
 
 export type { GitClient } from "./transport"
 export type Actions = ReturnType<typeof createActions>

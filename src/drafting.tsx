@@ -117,9 +117,11 @@ export function DraftBanner(props: { draft: Draft; onOpen: () => void }) {
   return (
     <Show when={props.draft.draft()}>
       {(current) => (
-        <div class="ghp-banner ghp-draft-banner" data-source={current().source}>
-          <div class="ghp-draft-banner-line">
-            <ui.Icon name={current().source === "agent" ? "brain" : "review"} size="small" />
+        <div class="ghp-dock" data-tone="draft" data-source={current().source}>
+          <div class="ghp-dock-line">
+            <span class="ghp-dock-icon">
+              <ui.Icon name={current().source === "agent" ? "brain" : "review"} size="small" />
+            </span>
             <span class="ghp-grow ghp-ellipsis">
               <b>{t(current().source === "agent" ? "draft.bannerAgent" : "draft.bannerUser")}</b>
               {" · "}
@@ -129,18 +131,20 @@ export function DraftBanner(props: { draft: Draft; onOpen: () => void }) {
                 {t("draft.suggests", { event: t(`draft.event.${current().event}`) })}
               </Show>
             </span>
+            <ui.Button size="small" variant="ghost" disabled={!!props.draft.busy()} onClick={() => void props.draft.discard()}>
+              {t("draft.discard")}
+            </ui.Button>
             <ui.Button size="small" variant="ghost" icon="review" onClick={props.onOpen}>
               {t("draft.open")}
             </ui.Button>
             <ui.Button size="small" variant="contrast" busy={props.draft.busy() === "submit"} disabled={!!props.draft.busy()} onClick={() => void props.draft.submit()}>
               {t("draft.submit")}
             </ui.Button>
-            <ui.Button size="small" variant="ghost" disabled={!!props.draft.busy()} onClick={() => void props.draft.discard()}>
-              {t("draft.discard")}
-            </ui.Button>
           </div>
           <Show when={current().note}>
-            <div class="ghp-draft-note">{current().note}</div>
+            <div class="ghp-dock-note ghp-ellipsis" title={current().note}>
+              {current().note}
+            </div>
           </Show>
         </div>
       )}

@@ -254,6 +254,11 @@ export const en = {
   "item.mergeable.MERGEABLE": "No conflicts",
   "item.mergeable.UNKNOWN": "Checking mergeability",
   "item.fork": "from a fork",
+  "item.wantsToMerge": "wants to merge",
+  "item.checks.passed.one": "{{count}} check passed",
+  "item.checks.passed.other": "{{count}} checks passed",
+  "item.checks.failure": "{{done}} of {{count}} checks failed",
+  "item.checks.pending": "{{done}} of {{count}} checks running",
   "item.hint": "Click to open · ⌘-click opens GitHub",
 
   "action.addToChat": "Add to chat",

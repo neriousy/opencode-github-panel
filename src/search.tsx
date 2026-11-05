@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, createUniqueId, For, mapArray, on, onCleanup, onMount, Show, untrack } from "solid-js"
 import { createKeyed, type Context, type UiMenuEntry } from "@opencode/plugin/gui"
-import { errorMessage, repoOf } from "./actions"
+import { allowed, errorMessage, repoOf } from "./actions"
 import { agentMarks } from "./activity"
 import { latest } from "./queries"
 import type { Label, SearchItem } from "./contract"
@@ -954,7 +954,7 @@ function ItemRow(props: {
       ? [{ label: t("action.startIssue"), icon: "branch-out" as const, onSelect: () => void s.run("branch", () => s.actions.startIssue(s.cwd(), props.item)) }]
       : []),
     ...s.actions.agentMenu(ref(), props.item.kind),
-    ...(props.item.state === "OPEN"
+    ...(props.item.state === "OPEN" && allowed(props.item, "close")
       ? [
           { type: "separator" as const },
           {
@@ -980,13 +980,17 @@ function ItemRow(props: {
                 ),
               ),
           },
-          {
-            label: t("action.mergePr"),
-            icon: "fork" as const,
-            disabled: props.item.draft,
-            onSelect: () =>
-              void s.run("merge", () => s.actions.mergePr(s.cwd(), { number: props.item.number, title: props.item.title, head: props.item.head ?? "" })),
-          },
+          ...(allowed(props.item, "merge")
+            ? [
+                {
+                  label: t("action.mergePr"),
+                  icon: "fork" as const,
+                  disabled: props.item.draft,
+                  onSelect: () =>
+                    void s.run("merge", () => s.actions.mergePr(s.cwd(), { number: props.item.number, title: props.item.title, head: props.item.head ?? "" })),
+                },
+              ]
+            : []),
         ]
       : []),
   ]

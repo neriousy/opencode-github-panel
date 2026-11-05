@@ -5,7 +5,7 @@ import { homedir } from "node:os"
 import { basename, delimiter, isAbsolute, join } from "node:path"
 import type { events, Issues, Item, methods, Overview, PullRequest, Pulls } from "./schemas"
 import { apiPath, createGitHub, remember } from "./github"
-import { BRANCH_FORMAT, ITEM_QUERY, LOG_FORMAT, parseBranches, parseGqlItem, parseIssues, parseLog, parseRemote, parseStatus, parseWorktrees, FIELD, type GqlItem } from "./git"
+import { BRANCH_FORMAT, ITEM_QUERY, VIEWER_FIELDS, viewerCan, LOG_FORMAT, parseBranches, parseGqlItem, parseIssues, parseLog, parseRemote, parseStatus, parseWorktrees, FIELD, type GqlItem } from "./git"
 
 const ISSUE_FIELDS = "number,title,state,url,author,labels,assignees,updatedAt"
 // How long a checkout's folders, remote and default branch are reused before git is asked again.
@@ -848,7 +848,7 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
   return { backend, kit: { github, repoOf: (cwd) => repoOf(cwd, null), changed: itemChanged } }
 }
 
-const PULL_FRAGMENT = "number title state isDraft url headRefName headRefOid baseRefName isCrossRepository author{login} reviewDecision updatedAt"
+const PULL_FRAGMENT = `number title state isDraft url headRefName headRefOid baseRefName isCrossRepository author{login} reviewDecision updatedAt ${VIEWER_FIELDS}`
 const ROLLUP = "commits(last:1){nodes{commit{statusCheckRollup{state}}}}"
 
 interface GqlPullNode {
@@ -865,6 +865,9 @@ interface GqlPullNode {
   reviewDecision: string | null
   updatedAt: string
   commits?: { nodes: { commit: { statusCheckRollup: { state: string } | null } }[] }
+  viewerCanClose?: boolean
+  viewerCanReopen?: boolean
+  repository?: { viewerPermission?: string | null }
 }
 
 /** Every pull request node anywhere in a GraphQL response, as the panel's PullRequest. */
@@ -894,6 +897,7 @@ function pullNodes(data: unknown): Pulls["items"] {
       checks: !rollup ? "none" : rollup === "SUCCESS" ? "success" : rollup === "PENDING" || rollup === "EXPECTED" ? "pending" : "failure",
       updated: node.updatedAt,
       sha: node.headRefOid,
+      ...(viewerCan(node, true) ? { can: viewerCan(node, true) } : {}),
     }
   })
 }

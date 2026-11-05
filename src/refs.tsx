@@ -2,7 +2,7 @@ import { createEffect, createSignal, on, onCleanup, onMount, Show } from "solid-
 import { Portal } from "solid-js/web"
 import type { Context, UiMenuEntry } from "@opencode/plugin/gui"
 import { latest } from "./queries"
-import { repoOf, type Actions } from "./actions"
+import { allowed, repoOf, type Actions } from "./actions"
 import type { ItemRef } from "./contract"
 import { findRefs, parseGitHubLink, parseItemUrl } from "./git"
 import { ItemCard } from "./item"
@@ -370,16 +370,20 @@ function RefMenu(props: { ctx: Context; actions: Actions; target: { ref: ItemRef
                   actions.progress(t("action.checkoutPr"), () => actions.git.checkoutPr({ cwd: directory, number: ref.number, repo: ref.repo })),
                 ),
             },
-            {
-              label: t("action.mergePr"),
-              icon: "fork" as const,
-              disabled: current.draft,
-              onSelect: () => run(() => actions.mergePr(directory, { number: ref.number, title: current.title, head: current.pr?.head ?? "" }, ref.repo)),
-            },
+            ...(allowed(current, "merge")
+              ? [
+                  {
+                    label: t("action.mergePr"),
+                    icon: "fork" as const,
+                    disabled: current.draft,
+                    onSelect: () => run(() => actions.mergePr(directory, { number: ref.number, title: current.title, head: current.pr?.head ?? "" }, ref.repo)),
+                  },
+                ]
+              : []),
           ]
         : []),
-      ...(current && open ? [{ type: "group" as const, label: t("close.group"), items: actions.closeMenu(current, run) }] : []),
-      ...(current?.state === "CLOSED"
+      ...(current && open && allowed(current, "close") ? [{ type: "group" as const, label: t("close.group"), items: actions.closeMenu(current, run) }] : []),
+      ...(current?.state === "CLOSED" && allowed(current, "reopen")
         ? [
             { type: "separator" as const },
             { label: t("action.reopen"), icon: "outline-undo" as const, onSelect: () => run(() => actions.setItemState(current, true)) },

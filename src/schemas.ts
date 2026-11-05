@@ -82,6 +82,13 @@ export const Branch = Schema.Struct({
 })
 export type Branch = typeof Branch.Type
 
+/**
+ * What the signed-in user may do with an issue or pull request, as GitHub answers it. Absent when the source does not
+ * say (an older server part): the panel then offers everything and GitHub refuses what is not allowed.
+ */
+export const Can = Schema.Struct({ close: Schema.Boolean, reopen: Schema.Boolean, merge: Schema.Boolean })
+export type Can = typeof Can.Type
+
 export const PullRequest = Schema.Struct({
   number: Schema.Number,
   title: Schema.String,
@@ -98,6 +105,7 @@ export const PullRequest = Schema.Struct({
   updated: Schema.String,
   /** The head commit, when the source reports it: a local branch at another commit has moved on since. */
   sha: Schema.optional(Schema.String),
+  can: Schema.optional(Can),
 })
 export type PullRequest = typeof PullRequest.Type
 
@@ -181,6 +189,7 @@ export const Item = Schema.Struct({
   ),
   /** For an issue, the pull requests that close it; for a pull request, the issues it closes. */
   links: Schema.optional(Schema.Array(ItemRef)),
+  can: Schema.optional(Can),
 })
 export type Item = typeof Item.Type
 
@@ -324,6 +333,7 @@ export const SearchItem = Schema.Struct({
   base: Schema.NullOr(Schema.String),
   review: Schema.NullOr(Schema.String),
   checks: Schema.Literals(["success", "failure", "pending", "none"]),
+  can: Schema.optional(Can),
 })
 export type SearchItem = typeof SearchItem.Type
 

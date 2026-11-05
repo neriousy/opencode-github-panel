@@ -70,6 +70,11 @@ export function Conversation(props: { item: Item; reviews: Reviews | undefined; 
     return [...comments, ...reviews, ...threads].sort((a, b) => a.at.localeCompare(b.at))
   })
   const unresolved = () => (props.reviews?.threads ?? []).filter((thread) => !thread.resolved).length
+  // Everything someone wrote after the description: comments, reviews with text, and every reply in review threads.
+  const written = () =>
+    props.item.comments.length +
+    (props.reviews?.reviews ?? []).filter((review) => review.state !== "PENDING" && review.body.trim()).length +
+    (props.reviews?.threads ?? []).reduce((total, thread) => total + thread.comments.length, 0)
   const split = () => Math.max(0, entries().length - RECENT)
   const earlier = () => props.folds.smart() && props.folds.all() !== false && !props.folds.flag("earlier") && entries().length > LONG
   const head = () => entries().slice(0, earlier() ? 1 : split())
@@ -125,7 +130,7 @@ export function Conversation(props: { item: Item; reviews: Reviews | undefined; 
     <div class="ghp-conv">
       <div class="ghp-bar">
         <span class="ghp-faint ghp-ellipsis">
-          {ctx.plural("item.comments", entries().length)}
+          {ctx.plural("item.comments", written())}
           <Show when={unresolved() > 0}> · {t("view.unresolved", { count: unresolved() })}</Show>
         </span>
         <div class="ghp-spacer" />
@@ -150,7 +155,6 @@ export function Conversation(props: { item: Item; reviews: Reviews | undefined; 
         lines={12}
         suggested={false}
         description
-        verb={<span class="ghp-faint">{t("view.opened")}</span>}
       />
       <For each={head()}>{render}</For>
       <Show when={earlier()}>
@@ -197,9 +201,15 @@ function Note(props: {
     >
       <button type="button" class="ghp-entry-head" aria-expanded={!folded()} onClick={toggle}>
         <Chevron open={!folded()} />
-        <b class="ghp-entry-author">{props.author}</b>
-        {props.verb}
-        <span class="ghp-faint">{ago(Date.parse(props.at) / 1000)}</span>
+        {/* The header above already says who opened it and when. */}
+        <Show
+          when={!props.description}
+          fallback={<b class="ghp-entry-author ghp-entry-label">{ctx.t("view.description")}</b>}
+        >
+          <b class="ghp-entry-author">{props.author}</b>
+          {props.verb}
+          <span class="ghp-faint">{ago(Date.parse(props.at) / 1000)}</span>
+        </Show>
         <Show when={folded()}>
           <span class="ghp-entry-summary ghp-ellipsis">{firstLine(props.body)}</span>
         </Show>

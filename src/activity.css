@@ -140,31 +140,6 @@
   color: var(--v2-state-fg-warning, #9a6700);
 }
 
-/* Proposals at the top of an issue or pull request tab. */
-
-.ghp-agent-banner {
-  flex-direction: column;
-  align-items: stretch;
-  margin: 8px 12px 0;
-  padding: 6px 8px;
-
-  .ghp-clamp {
-    padding-inline-start: 22px;
-  }
-
-  .ghp-activity-note {
-    padding-inline-start: 22px;
-  }
-}
-
-.ghp-agent-banner-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 6px;
-  min-width: 0;
-}
-
 /* A row in the pull request and issue lists that the agent touched. */
 
 .ghp-pr-agent {

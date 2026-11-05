@@ -6,6 +6,7 @@ export const item = {
   "view.unfoldAll": "Unfold all",
   "view.foldPref": "Fold long content",
   "view.opened": "opened",
+  "view.description": "Description",
   "view.unresolved": "{{count}} unresolved",
   "view.earlier.one": "Show {{count}} earlier comment",
   "view.earlier.other": "Show {{count}} earlier comments",

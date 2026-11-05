@@ -1,5 +1,5 @@
 import type { ChangedFile, Inbox, InboxEntry, Job, RemoteCommit, RepoMeta, Reviews, Run, RunDetails, SearchItem, SearchPage } from "./schemas"
-import { stateReason } from "./git"
+import { stateReason, viewerCan } from "./git"
 
 type ItemState = { state: "OPEN" | "CLOSED" | "MERGED"; reason?: "completed" | "not_planned" | "duplicate" }
 
@@ -10,8 +10,8 @@ const LOG_LIMIT = 400_000
 
 const SEARCH_QUERY = `query($q:String!,$after:String,$first:Int!){search(query:$q,type:ISSUE,first:$first,after:$after){issueCount pageInfo{hasNextPage endCursor}
   nodes{__typename
-    ... on Issue{number title state stateReason url createdAt updatedAt author{login} comments{totalCount} labels(first:6){nodes{name color}} repository{nameWithOwner}}
-    ... on PullRequest{number title state isDraft url createdAt updatedAt author{login} comments{totalCount} labels(first:6){nodes{name color}} repository{nameWithOwner}
+    ... on Issue{number title state stateReason url createdAt updatedAt author{login} comments{totalCount} labels(first:6){nodes{name color}} repository{nameWithOwner viewerPermission} viewerCanClose viewerCanReopen}
+    ... on PullRequest{number title state isDraft url createdAt updatedAt author{login} comments{totalCount} labels(first:6){nodes{name color}} repository{nameWithOwner viewerPermission} viewerCanClose viewerCanReopen
       headRefName baseRefName reviewDecision}}}}`
 
 const ITEM_INFO = `__typename
@@ -206,6 +206,7 @@ export function createGitHub(deps: Deps) {
             base: node.baseRefName ?? null,
             review: node.reviewDecision ?? null,
             checks: "none",
+            ...(viewerCan(node, pr) ? { can: viewerCan(node, pr) } : {}),
           },
         ]
       }),
@@ -689,7 +690,9 @@ interface GqlSearch {
     author: { login: string } | null
     comments: { totalCount: number }
     labels: { nodes: { name: string; color: string }[] } | null
-    repository: { nameWithOwner: string }
+    repository: { nameWithOwner: string; viewerPermission?: string | null }
+    viewerCanClose?: boolean
+    viewerCanReopen?: boolean
     headRefName?: string
     baseRefName?: string
     reviewDecision?: string | null

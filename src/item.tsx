@@ -7,7 +7,7 @@ import { createFolds } from "./fold"
 import { Conversation, PrChecks, PrFiles } from "./pr"
 import { createKeyed, usePlugin, type Context, type MountedSession, type UiMenuEntry } from "@opencode/plugin/gui"
 import { latest } from "./queries"
-import { errorMessage, repoOf, type Actions } from "./actions"
+import { allowed, errorMessage, repoOf, type Actions } from "./actions"
 import { parseItemUrl, pullFor } from "./git"
 import type { Check, Item, ItemRef, Label } from "./contract"
 import type { definition } from "./definition"
@@ -96,13 +96,12 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
     },
     { type: "separator" },
     ...(item.state === "OPEN"
-      ? props.actions.closeMenu(item, (work) => void run("state", work))
-      : [{
-          label: t("action.reopen"),
-          icon: "outline-undo" as const,
-          disabled: item.state === "MERGED",
-          onSelect: () => void run("state", () => props.actions.setItemState(item, true)),
-        }]),
+      ? allowed(item, "close")
+        ? props.actions.closeMenu(item, (work) => void run("state", work))
+        : []
+      : item.state === "CLOSED" && allowed(item, "reopen")
+        ? [{ label: t("action.reopen"), icon: "outline-undo" as const, onSelect: () => void run("state", () => props.actions.setItemState(item, true)) }]
+        : []),
   ]
 
   return (
@@ -157,8 +156,6 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
         {(current) => (
           <>
           <div class="ghp-item-scroll">
-            <AgentBanner item={props.item} session={props.session} actions={props.actions} />
-            <DraftBanner draft={draft} onOpen={() => setSection("files")} />
             <header class="ghp-item-header">
               <div class="ghp-item-top">
                 <StateChip ctx={ctx} item={current()} />
@@ -168,6 +165,27 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
                 <div class="ghp-spacer" />
                 <Show when={data.loading}>
                   <ui.Loader size="small" />
+                </Show>
+                <Show when={current().pr && current().state === "OPEN" && local() ? current().pr : undefined}>
+                  {(pr) => (
+                    <ui.Tooltip value={t("action.checkoutPr")}>
+                      <ui.IconButton
+                        icon="enter"
+                        label={t("action.checkoutPr")}
+                        busy={busy() === "checkout"}
+                        disabled={!!busy() || overview.latest?.branch === pr().head}
+                        onClick={() =>
+                          void run("checkout", () =>
+                            props.actions.progress(
+                              t("action.checkoutPr"),
+                              () => git.checkoutPr({ cwd: overview.latest?.root ?? props.session.directory, number: current().number, repo: current().repo }),
+                              t("toast.switched", { name: pr().head }),
+                            ),
+                          )
+                        }
+                      />
+                    </ui.Tooltip>
+                  )}
                 </Show>
                 <ui.Menu
                   label={t("agent.menu")}
@@ -181,90 +199,69 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
               </div>
               <h2 class="ghp-item-title">{current().title}</h2>
               <div class="ghp-item-meta">
-                <span>
-                  <b>{current().author}</b> {t("item.opened", { ago: ago(Date.parse(current().created) / 1000) })}
-                </span>
-                <span>· {ctx.plural("item.comments", current().comments.length)}</span>
-              </div>
-              <div class="ghp-item-labels">
-                <For each={current().labels}>{(label) => <LabelPill label={label} />}</For>
-                <For each={current().assignees}>{(login) => <span class="ghp-pill">@{login}</span>}</For>
-                <Show when={current().milestone}>{(milestone) => <span class="ghp-pill">◇ {milestone()}</span>}</Show>
-                <Show when={(current().pr?.requested.length ?? 0) > 0}>
-                  <span class="ghp-pill">
-                    {t("item.reviewers")}: {current().pr?.requested.join(", ")}
-                  </span>
+                <Show
+                  when={current().pr}
+                  fallback={
+                    <>
+                      <span>
+                        <b>{current().author}</b> {t("item.opened", { ago: ago(Date.parse(current().created) / 1000) })}
+                      </span>
+                    </>
+                  }
+                >
+                  {(pr) => (
+                    <>
+                      <span class="ghp-item-merge">
+                        <b>{current().author}</b> {t("item.wantsToMerge")} <code>{pr().head}</code>
+                        <span class="ghp-faint">→</span>
+                        <code>{pr().base}</code>
+                      </span>
+                      <span>· {ago(Date.parse(current().created) / 1000)}</span>
+                      <Show when={pr().cross}>
+                        <span>· {t("item.fork")}</span>
+                      </Show>
+                    </>
+                  )}
                 </Show>
               </div>
+              <Show when={current().labels.length + current().assignees.length > 0 || current().milestone || (current().pr?.requested.length ?? 0) > 0}>
+                <div class="ghp-item-labels">
+                  <For each={current().labels}>{(label) => <LabelPill label={label} />}</For>
+                  <For each={current().assignees}>{(login) => <span class="ghp-pill">@{login}</span>}</For>
+                  <Show when={current().milestone}>{(milestone) => <span class="ghp-pill">◇ {milestone()}</span>}</Show>
+                  <Show when={(current().pr?.requested.length ?? 0) > 0}>
+                    <span class="ghp-pill">
+                      {t("item.reviewers")}: {current().pr?.requested.join(", ")}
+                    </span>
+                  </Show>
+                </div>
+              </Show>
               <Show when={current().pr}>
                 {(pr) => (
-                  <>
-                    <div class="ghp-item-branches">
-                      <ui.Icon name="branch" size="small" />
-                      <code>{pr().head}</code>
-                      <span class="ghp-faint">→</span>
-                      <code>{pr().base}</code>
-                      <Show when={pr().cross}>
-                        <span class="ghp-pill">{t("item.fork")}</span>
-                      </Show>
-                    </div>
-                    <div class="ghp-item-stats">
-                      <span class="ghp-add">+{pr().additions}</span>
-                      <span class="ghp-del">−{pr().deletions}</span>
+                  // One line of facts, plain text between dots; only colour says something is wrong.
+                  <div class="ghp-item-facts">
+                    <button type="button" class="ghp-fact" onClick={() => setSection("files")}>
+                      <span class="ghp-add">+{pr().additions}</span> <span class="ghp-del">−{pr().deletions}</span>{" "}
                       <span class="ghp-faint">{ctx.plural("item.files", pr().files)}</span>
-                      <Show when={current().state === "OPEN"}>
-                        <span class="ghp-pill" data-mergeable={pr().mergeable}>
-                          {t(`item.mergeable.${pr().mergeable}`)}
-                        </span>
-                      </Show>
-                      <Show when={pr().review}>
-                        {(review) => (
-                          <span class="ghp-pill" data-review={review()}>
-                            {t(`pulls.review.${review()}`)}
-                          </span>
-                        )}
-                      </Show>
-                      <Show when={pr().checks.length > 0}>
-                        <button type="button" class="ghp-item-checks-toggle" onClick={() => setSection("checks")}>
-                          <ChecksSummary checks={pr().checks} />
-                        </button>
-                      </Show>
-                    </div>
-                    <Show when={current().state === "OPEN"}>
-                      <div class="ghp-item-actions">
-                        <ui.Button
-                          size="small"
-                          variant="neutral"
-                          icon="enter"
-                          busy={busy() === "checkout"}
-                          disabled={!local() || !!busy()}
-                          onClick={() =>
-                            void run("checkout", () =>
-                              props.actions.progress(
-                                t("action.checkoutPr"),
-                                () => git.checkoutPr({ cwd: overview.latest?.root ?? props.session.directory, number: current().number, repo: current().repo }),
-                                t("toast.switched", { name: pr().head }),
-                              ),
-                            )
-                          }
-                        >
-                          {t("action.checkoutPr")}
-                        </ui.Button>
-                        <Show when={current().draft && current().state === "OPEN"}>
-                          <ui.Button
-                            size="small"
-                            variant="neutral"
-                            icon="check"
-                            busy={busy() === "draft"}
-                            disabled={!!busy()}
-                            onClick={() => void run("draft", () => editor.draft(current()))}
-                          >
-                            {t("edit.ready")}
-                          </ui.Button>
-                        </Show>
-                      </div>
+                    </button>
+                    <Show when={current().state === "OPEN" && pr().mergeable === "CONFLICTING"}>
+                      <span class="ghp-fact" data-mergeable={pr().mergeable}>
+                        {t(`item.mergeable.${pr().mergeable}`)}
+                      </span>
                     </Show>
-                  </>
+                    <Show when={pr().review}>
+                      {(review) => (
+                        <span class="ghp-fact" data-review={review()}>
+                          {t(`pulls.review.${review()}`)}
+                        </span>
+                      )}
+                    </Show>
+                    <Show when={pr().checks.length > 0}>
+                      <button type="button" class="ghp-fact" onClick={() => setSection("checks")}>
+                        <ChecksSummary checks={pr().checks} />
+                      </button>
+                    </Show>
+                  </div>
                 )}
               </Show>
               <Show when={current().kind === "issue"}>
@@ -276,20 +273,6 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
                   busy={busy()}
                   onSwitch={(name) => void run("checkout", () => props.actions.checkout(overview.latest?.root ?? props.session.directory, name, name))}
                 />
-              </Show>
-              <Show when={current().kind === "issue" && current().state === "OPEN" && local()}>
-                <div class="ghp-item-actions">
-                  <ui.Button
-                    size="small"
-                    variant="contrast"
-                    icon="branch-out"
-                    busy={busy() === "branch"}
-                    disabled={!!busy()}
-                    onClick={() => void run("branch", () => props.actions.startIssue(props.session.directory, current()))}
-                  >
-                    {t("action.startIssue")}
-                  </ui.Button>
-                </div>
               </Show>
             </header>
 
@@ -347,6 +330,8 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
             {/* Pinned under the conversation, like the session's composer: the reply and what to do with the item
                 stay in reach however far the conversation scrolls. */}
             <footer class="ghp-item-composer">
+              <AgentBanner item={props.item} session={props.session} actions={props.actions} />
+              <DraftBanner draft={draft} onOpen={() => setSection("files")} />
               <div class="ghp-composer-box">
                 <textarea
                   class="ghp-composer-input"
@@ -364,7 +349,7 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
                 />
                 <div class="ghp-composer-bar">
                   <Show when={current().state === "OPEN"} fallback={
-                    <Show when={current().state === "CLOSED"}>
+                    <Show when={current().state === "CLOSED" && allowed(current(), "reopen")}>
                       <ui.Button
                         size="small"
                         variant="ghost"
@@ -381,33 +366,41 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
                       </ui.Button>
                     </Show>
                   }>
-                    <ui.Menu
-                      label={comment().trim() ? t("close.withComment") : t(current().kind === "pr" ? "close.pr" : "close.issue")}
-                      trigger="button"
-                      icon="circle-x"
-                      placement="top-start"
-                      disabled={!!busy()}
-                      items={props.actions.closeMenu(
-                        current(),
-                        (work) =>
-                          void run("state", async () => {
-                            const typed = comment()
-                            const done = await work()
-                            if (done !== undefined && comment() === typed) setComment("")
-                          }),
-                        comment,
-                      )}
-                    />
+                    <Show when={allowed(current(), "close")}>
+                      <ui.Menu
+                        label={comment().trim() ? t("close.withComment") : t(current().kind === "pr" ? "close.pr" : "close.issue")}
+                        trigger="button"
+                        icon="circle-x"
+                        placement="top-start"
+                        disabled={!!busy()}
+                        items={props.actions.closeMenu(
+                          current(),
+                          (work) =>
+                            void run("state", async () => {
+                              const typed = comment()
+                              const done = await work()
+                              if (done !== undefined && comment() === typed) setComment("")
+                            }),
+                          comment,
+                        )}
+                      />
+                    </Show>
                   </Show>
                   <div class="ghp-spacer" />
-                  <Show when={current().pr && current().state === "OPEN" ? current().pr : undefined}>
+                  <Show when={current().draft && current().state === "OPEN"}>
+                    <ui.Button size="small" variant="neutral" icon="check" busy={busy() === "draft"} disabled={!!busy()} onClick={() => void run("draft", () => editor.draft(current()))}>
+                      {t("edit.ready")}
+                    </ui.Button>
+                  </Show>
+                  {/* Only for someone who can push to the base, as on GitHub; issue #1. */}
+                  <Show when={current().pr && current().state === "OPEN" && !current().draft && allowed(current(), "merge") ? current().pr : undefined}>
                     {(pr) => (
                       <ui.Button
                         size="small"
                         variant="neutral"
                         icon="fork"
                         busy={busy() === "merge"}
-                        disabled={current().draft || !!busy()}
+                        disabled={!!busy()}
                         onClick={() =>
                           void run("merge", () =>
                             props.actions.mergePr(props.session.directory, { number: current().number, title: current().title, head: pr().head }, current().repo),
@@ -442,6 +435,18 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
                           : [...verdicts, plain]
                       })()}
                     />
+                  </Show>
+                  <Show when={current().kind === "issue" && current().state === "OPEN" && local()}>
+                    <ui.Button
+                      size="small"
+                      variant="neutral"
+                      icon="branch-out"
+                      busy={busy() === "branch"}
+                      disabled={!!busy()}
+                      onClick={() => void run("branch", () => props.actions.startIssue(props.session.directory, current()))}
+                    >
+                      {t("action.startIssue")}
+                    </ui.Button>
                   </Show>
                   <ui.Button
                     size="small"
@@ -786,11 +791,9 @@ function ChecksSummary(props: { checks: readonly Check[] }) {
   return (
     <span class="ghp-checks-summary" data-state={overall()}>
       <span class="ghp-check-dot" data-state={overall()} />
-      {ctx.t(`pulls.checks.${overall()}`)}
-      <span class="ghp-faint">
-        {count("success")}✓ {count("failure") > 0 ? `${count("failure")}✕ ` : ""}
-        {count("pending") > 0 ? `${count("pending")}● ` : ""}
-      </span>
+      {overall() === "success"
+        ? ctx.plural("item.checks.passed", props.checks.length)
+        : ctx.t(`item.checks.${overall()}`, { done: count(overall()), count: props.checks.length })}
     </span>
   )
 }
