@@ -16,6 +16,28 @@ const RETRY = 60_000
 // after a session switch, so the timeline's first requests go ahead of them.
 const PER_SERVER = 2
 const SETTLE = 900
+// Refreshes of data already on screen use at most this many of a server's slots, so what the user waits for (a tab they
+// opened, a write) never queues behind two of them.
+const BACKGROUND = 1
+
+/** A call's place in its server's queue: writes, then reads the user waits for, then refreshes. */
+type Rank = 0 | 1 | 2
+
+const mode = { background: false }
+
+/**
+ * Runs `work`, and gives the panel's calls it starts synchronously the lowest priority: a refresh of data a view already
+ * shows. The priority is read when a call starts, before its first await.
+ */
+export function background<T>(work: () => T): T {
+  const before = mode.background
+  mode.background = true
+  try {
+    return work()
+  } finally {
+    mode.background = before
+  }
+}
 
 /** Methods that only read; any other call changes something and goes ahead of them. */
 const reads = new Set<string>([
@@ -57,27 +79,40 @@ export function createTransport(ctx: Context): GitClient {
   const missing = new Map<string, number>()
   const listeners = new Map<string, Set<(data: never) => void>>()
 
-  const pools = new Map<string, { running: number; waiting: { write: boolean; start: () => void }[] }>()
+  const pools = new Map<string, { running: number; background: number; waiting: { rank: Rank; start: () => void }[] }>()
   const switched = { at: 0 }
   createEffect(on(() => ctx.sessions.current()?.id, () => (switched.at = Date.now()), { defer: true }))
 
-  /** Runs `work` within the server's share: writes first, reads after the settle time that follows a session switch. */
-  const scheduled = async <T>(server: string, write: boolean, work: () => Promise<T>) => {
+  /** Runs `work` within the server's share, in rank order; reads wait out the settle time that follows a session switch. */
+  const scheduled = async <T>(server: string, rank: Rank, work: () => Promise<T>) => {
     const wait = switched.at + SETTLE - Date.now()
-    if (!write && wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
-    const pool = pools.get(server) ?? { running: 0, waiting: [] }
+    if (rank > 0 && wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
+    const pool = pools.get(server) ?? { running: 0, background: 0, waiting: [] }
     pools.set(server, pool)
-    if (pool.running >= PER_SERVER)
-      await new Promise<void>((start) => {
-        const index = write ? pool.waiting.findIndex((entry) => !entry.write) : -1
-        pool.waiting.splice(index === -1 ? pool.waiting.length : index, 0, { write, start })
-      })
-    pool.running++
+    await new Promise<void>((start) => {
+      const index = pool.waiting.findIndex((entry) => entry.rank > rank)
+      pool.waiting.splice(index === -1 ? pool.waiting.length : index, 0, { rank, start })
+      pump(pool)
+    })
     try {
       return await work()
     } finally {
       pool.running--
-      pool.waiting.shift()?.start()
+      if (rank === 2) pool.background--
+      pump(pool)
+    }
+  }
+
+  /** Starts waiting calls while the server has free slots, the first in rank order that may take one. */
+  const pump = (pool: { running: number; background: number; waiting: { rank: Rank; start: () => void }[] }) => {
+    while (pool.running < PER_SERVER) {
+      const index = pool.waiting.findIndex((entry) => entry.rank < 2 || pool.background < BACKGROUND)
+      const entry = pool.waiting[index]
+      if (!entry) return
+      pool.waiting.splice(index, 1)
+      pool.running++
+      if (entry.rank === 2) pool.background++
+      entry.start()
     }
   }
 
@@ -106,12 +141,12 @@ export function createTransport(ctx: Context): GitClient {
   }
 
   const call = async (name: keyof typeof methods, input: unknown, options?: IpcCallOptions) => {
-    const result = await send(name, input, options)
+    const result = await send(name, input, !reads.has(name) ? 0 : mode.background ? 2 : 1, options)
     announce(name, input)
     return result
   }
 
-  const send = async (name: keyof typeof methods, input: unknown, options?: IpcCallOptions) => {
+  const send = async (name: keyof typeof methods, input: unknown, rank: Rank, options?: IpcCallOptions) => {
     const { server, directory } = target()
     const skip = server ? (missing.get(server.id) ?? 0) > Date.now() : true
     if (server && !skip) {
@@ -120,7 +155,7 @@ export function createTransport(ctx: Context): GitClient {
         const rpc = server.client.rpc(GitRpc) as unknown as Record<string, (input: unknown, options: object) => Promise<unknown>>
         const method = rpc[name]
         if (method)
-          return await scheduled(server.id, !reads.has(name), () =>
+          return await scheduled(server.id, rank, () =>
             method(input, { location: directory ? { directory } : undefined, signal: options?.signal }),
           )
       } catch (error) {

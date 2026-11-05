@@ -110,17 +110,48 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
       <Show
         when={data.latest}
         fallback={
-          <div class="ghp-empty">
-            <Show when={data.error} fallback={<ui.Loader />}>
-              <ui.Icon name="circle-exclamation" />
-            </Show>
-            <span>{data.error ? errorMessage(data.error) : t("item.loading")}</span>
-            <Show when={data.error}>
-              <ui.Button size="small" variant="neutral" icon="refresh" onClick={refresh}>
-                {t("action.retry")}
-              </ui.Button>
-            </Show>
-          </div>
+          <Show
+            when={!data.error && q.peek(props.item)}
+            fallback={
+              <div class="ghp-empty">
+                <Show when={data.error} fallback={<ui.Loader />}>
+                  <ui.Icon name="circle-exclamation" />
+                </Show>
+                <span>{data.error ? errorMessage(data.error) : t("item.loading")}</span>
+                <Show when={data.error}>
+                  <ui.Button size="small" variant="neutral" icon="refresh" onClick={refresh}>
+                    {t("action.retry")}
+                  </ui.Button>
+                </Show>
+              </div>
+            }
+          >
+            {(row) => (
+              // The list row's facts while the conversation loads, so the tab shows what was clicked at once.
+              <div class="ghp-item-scroll">
+                <header class="ghp-item-header">
+                  <div class="ghp-item-top">
+                    <StateChip ctx={ctx} item={row()} />
+                    <span class="ghp-faint ghp-ellipsis">
+                      {row().repo}#{row().number}
+                    </span>
+                    <div class="ghp-spacer" />
+                    <ui.Loader size="small" />
+                  </div>
+                  <h2 class="ghp-item-title">{row().title}</h2>
+                  <div class="ghp-item-meta">
+                    <span>
+                      <b>{row().author}</b> {t("item.opened", { ago: ago(Date.parse(row().created) / 1000) })}
+                    </span>
+                    <span>· {ctx.plural("item.comments", row().comments)}</span>
+                  </div>
+                  <div class="ghp-item-labels">
+                    <For each={row().labels}>{(label) => <LabelPill label={label} />}</For>
+                  </div>
+                </header>
+              </div>
+            )}
+          </Show>
         }
       >
         {(current) => (

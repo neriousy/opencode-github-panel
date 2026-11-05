@@ -92,7 +92,10 @@ and open the repository on GitHub.
 
 ## How it works
 
-The plugin has three parts that share one backend (`src/backend.ts`, `src/github.ts`), which spawns `git` and `gh`:
+The plugin has three parts that share one backend (`src/backend.ts`, `src/github.ts`). It runs `git`, and talks to
+GitHub over one kept-alive HTTPS connection with the token `gh` keeps (`gh auth token`), falling back to `gh` itself when
+there is none; a `gh` process per request costs a process start and a new TLS handshake, about half a second each on
+Windows:
 
 - **Server part** (`src/index.ts`, `.` export): serves the backend over RPC (`src/rpc.ts`) from the OpenCode server, next
   to the repository. This is what makes remote servers work.
@@ -103,7 +106,10 @@ The plugin has three parts that share one backend (`src/backend.ts`, `src/github
 
 The GUI keeps its data in TanStack Query (`src/queries.ts`), one client per window. Lists, items, reviews, files, runs
 and the inbox stay cached while you switch sessions, files, tabs or sections, and refresh in the background when stale;
-hovering a row prefetches its tab, and opening a pull request prefetches its files. Local git changes refresh git
+hovering a row (or resting on it with the keyboard) prefetches its tab, an item's tab shows the list row's title, state
+and labels while its conversation loads, and opening a pull request prefetches its files. Calls to one server take turns
+two at a time: writes first, then what you are waiting for, then refreshes of what is already on screen, which never
+take both turns. Local git changes refresh git
 views only; commands that talk to the remote also refresh GitHub data. The server adds its own short caches for things
 that cannot change (files per head commit, finished runs and their logs). Writes to one repository run one at a time.
 The panel polls git every 4 seconds while it is visible. It needs `git`, and `gh` signed in
@@ -161,6 +167,18 @@ bun run typecheck
 bun test                        # parsers, the graph layout, branch clean-up and agent action plans
 bun scripts/smoke.ts <repo>     # runs the main-process code against a repository, outside Electron
 ```
+
+Performance: `perf/panel.bench.ts` measures the panel's CPU work (the History graph, a pull request's diff) with
+[strobe](https://github.com/Hona/strobe):
+
+```bash
+bunx strobe bench perf/panel.bench.ts --check                     # does it run?
+bunx strobe bench perf/panel.bench.ts --base origin/main --head .  # did a change make it faster?
+```
+
+To see what the panel costs inside the app, start OpenCode with `--remote-debugging-port=9333` and record its window
+while you use the panel: `bunx strobe record cdp:<browser WebSocket URL from http://127.0.0.1:9333/json/version>
+--probes attribution --for 30s`, then `strobe query <rec> insights` and `hotspots --by file`.
 
 When a rebuild changes `src/contract.ts`, reload the window (⌘R) as well. The app caches each Ipc client by id, so a
 window keeps encoding calls with the previous schemas until it reloads.

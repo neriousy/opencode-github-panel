@@ -931,6 +931,17 @@ function ItemRow(props: {
   let actions: HTMLDivElement | undefined
   let prefetch: ReturnType<typeof setTimeout> | undefined
   onCleanup(() => clearTimeout(prefetch))
+  // The row the keyboard rests on loads too; not the first row a list starts on.
+  createEffect(
+    on(
+      () => props.active,
+      (active) => {
+        clearTimeout(prefetch)
+        if (active) prefetch = setTimeout(() => q.prefetch(q.options.item(ref())), 150)
+      },
+      { defer: true },
+    ),
+  )
   // Only the list is a tab stop; a row's menu opens with `.`, Shift+F10 or a right click.
   onMount(() => actions?.querySelector("button")?.setAttribute("tabindex", "-1"))
 

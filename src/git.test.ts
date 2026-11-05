@@ -276,7 +276,7 @@ describe("issue links", () => {
 
   test("parseItem reads closing references", async () => {
     const { parseItem } = await import("./git")
-    const output = JSON.stringify({
+    const output = {
       number: 1,
       title: "t",
       state: "CLOSED",
@@ -284,7 +284,7 @@ describe("issue links", () => {
       createdAt: "c",
       updatedAt: "u",
       closedByPullRequestsReferences: [{ number: 3, repository: { name: "sandbox", owner: { login: "me" } } }, { number: 4 }],
-    })
+    }
     expect(parseItem("issue", "me/repo", output).links).toEqual([
       { repo: "me/sandbox", number: 3 },
       { repo: "me/repo", number: 4 },

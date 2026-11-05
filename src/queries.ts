@@ -10,8 +10,8 @@ import {
   type QueryKey,
   type QueryObserverResult,
 } from "@tanstack/query-core"
-import type { AgentQueue, Item, ItemRef, SearchPage } from "./schemas"
-import type { GitClient } from "./transport"
+import type { AgentQueue, Item, ItemRef, SearchItem, SearchPage } from "./schemas"
+import { background, type GitClient } from "./transport"
 
 /** The options the views pass to `query`. */
 export interface QueryInput<T> {
@@ -285,7 +285,18 @@ export function createQueries(git: GitClient) {
     itemChanged,
     /** A query bound to this window's client, typed by the query function's result. */
     query: <T>(accessor: () => QueryInput<T>) =>
-      observe<QueryObserverResult<T, Error>>(client, (options) => new QueryObserver(client, options), accessor),
+      observe<QueryObserverResult<T, Error>>(client, (options) => new QueryObserver(client, options), () => {
+        const input = accessor()
+        // A refetch of data on screen (a poll, an event's invalidation) yields to what the user is waiting for.
+        return { ...input, queryFn: () => (client.getQueryData(input.queryKey) === undefined ? input.queryFn() : background(input.queryFn)) }
+      }),
+    /** What a loaded list already knows about an item: enough for its tab's header while the rest loads. */
+    peek: (ref: ItemRef): SearchItem | undefined =>
+      client
+        .getQueriesData<InfiniteData<SearchPage, string | null>>({ queryKey: ["gh", ref.repo, "search"] })
+        .flatMap(([, data]) => data?.pages ?? [])
+        .flatMap((page) => page.items)
+        .find((item) => item.number === ref.number),
     /** A search a page at a time, bound to this window's client. */
     infinite: (accessor: () => ReturnType<typeof search> & { readonly enabled?: boolean }) =>
       observe<InfiniteQueryObserverResult<InfiniteData<SearchPage, string | null>, Error>>(

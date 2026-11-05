@@ -320,10 +320,48 @@ interface GhReference {
   readonly repository?: { readonly name?: string; readonly owner?: { readonly login?: string } }
 }
 
-/** Parses `gh issue view --json ...` or `gh pr view --json ...` into one shape. */
-export function parseItem(kind: Item["kind"], repo: string, output: string): Item {
-  // SAFETY: gh returns the fields requested with --json; optional ones are read defensively below.
-  const item = JSON.parse(output) as GhItem
+const ITEM_COMMON = `number title state url author{login} labels(first:50){nodes{name color}} assignees(first:20){nodes{login}} updatedAt createdAt body milestone{title} comments(last:100){nodes{author{login} body createdAt}}`
+const REFERENCE = "nodes{number repository{name owner{login}}}"
+
+/** One issue or pull request with its conversation, in one GraphQL request. */
+export const ITEM_QUERY = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){issueOrPullRequest(number:$number){__typename
+... on Issue{${ITEM_COMMON} stateReason(enableDuplicate:true) closedByPullRequestsReferences(first:20,includeClosedPrs:true){${REFERENCE}}}
+... on PullRequest{${ITEM_COMMON} isDraft headRefName baseRefName isCrossRepository additions deletions changedFiles reviewDecision mergeable headRefOid
+reviewRequests(first:50){nodes{requestedReviewer{... on User{login} ... on Bot{login} ... on Mannequin{login} ... on Team{slug name}}}}
+closingIssuesReferences(first:20){${REFERENCE}}
+commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{__typename ... on CheckRun{name status conclusion detailsUrl} ... on StatusContext{context state targetUrl}}}}}}}}}}}`
+
+type Nodes<T> = { readonly nodes: readonly (T | null)[] } | null | undefined
+
+/** ITEM_QUERY's node: gh's `--json` fields, with GraphQL's connections still wrapped in `nodes`. */
+export interface GqlItem extends Omit<GhItem, "labels" | "assignees" | "comments" | "reviewRequests" | "statusCheckRollup" | "closingIssuesReferences" | "closedByPullRequestsReferences"> {
+  readonly __typename: "Issue" | "PullRequest"
+  readonly labels?: Nodes<GhLabel>
+  readonly assignees?: Nodes<{ readonly login?: string }>
+  readonly comments?: Nodes<NonNullable<GhItem["comments"]>[number]>
+  readonly reviewRequests?: Nodes<{ readonly requestedReviewer: { readonly login?: string; readonly name?: string; readonly slug?: string } | null }>
+  readonly commits?: Nodes<{ readonly commit: { readonly statusCheckRollup: { readonly contexts: Nodes<GhCheck> } | null } }>
+  readonly closingIssuesReferences?: Nodes<GhReference>
+  readonly closedByPullRequestsReferences?: Nodes<GhReference>
+}
+
+/** Reads ITEM_QUERY's node into an item. */
+export function parseGqlItem(repo: string, node: GqlItem): Item {
+  const nodes = <T>(list: Nodes<T>) => (list?.nodes ?? []).flatMap((item) => (item ? [item] : []))
+  return parseItem(node.__typename === "PullRequest" ? "pr" : "issue", repo, {
+    ...node,
+    labels: nodes(node.labels),
+    assignees: nodes(node.assignees),
+    comments: nodes(node.comments),
+    reviewRequests: nodes(node.reviewRequests).flatMap((request) => request.requestedReviewer ?? []),
+    statusCheckRollup: nodes(node.commits).flatMap((commit) => nodes(commit.commit.statusCheckRollup?.contexts)),
+    closingIssuesReferences: node.closingIssuesReferences ? nodes(node.closingIssuesReferences) : undefined,
+    closedByPullRequestsReferences: node.closedByPullRequestsReferences ? nodes(node.closedByPullRequestsReferences) : undefined,
+  })
+}
+
+/** Reads gh's `issue view --json …` or `pr view --json …` shape into one item. */
+export function parseItem(kind: Item["kind"], repo: string, item: GhItem): Item {
   return {
     kind,
     repo,

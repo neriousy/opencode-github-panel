@@ -5,6 +5,7 @@
     "": {
       "name": "github-panel",
       "devDependencies": {
+        "@hona/strobe": "0.7.0",
         "@opencode/plugin": "2.2.0",
         "@tanstack/query-core": "^5.105.0",
         "@types/bun": "^1.4.4",
@@ -163,6 +164,18 @@
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.28.2", "", { "os": "win32", "cpu": "x64" }, "sha512-5ebpxr3nWMzrL/rnUI755Jkuee0bHL/Gq0WTF9lvcpv73wAp5eu8MfBUgWK9bhWvZjj7yX8etf/8tI8Ney695g=="],
 
     "@gar/promise-retry": ["@gar/promise-retry@1.0.3", "", {}, "sha512-GmzA9ckNokPypTg10pgpeHNQe7ph+iIKKmhKu3Ob9ANkswreCx7R3cKmY781K8QK3AqVL3xVh9A42JvIAbkkSA=="],
+
+    "@hona/strobe": ["@hona/strobe@0.7.0", "", { "optionalDependencies": { "@hona/strobe-darwin-arm64": "0.7.0", "@hona/strobe-darwin-x64": "0.7.0", "@hona/strobe-linux-arm64": "0.7.0", "@hona/strobe-linux-x64": "0.7.0", "@hona/strobe-win32-x64": "0.7.0" }, "bin": { "strobe": "bin/strobe.js" } }, "sha512-8KQWpoE/xGxjTmxUC9UGvkEdSkMg4a4ueCsnBZWJkqLYgklQTPF4wbeJdMxsXrFuSYkTZnIyGmXNeUTh5NmOjQ=="],
+
+    "@hona/strobe-darwin-arm64": ["@hona/strobe-darwin-arm64@0.7.0", "", { "os": "darwin", "cpu": "arm64" }, "sha512-Wi5M9NoNLmDmg6/zxeajKuk6HAcSUphOrD8+O6IGCR7LrkKSDe5dpG2ErzjCyctv3T+94f3Pa+JH0QF+AJuKXg=="],
+
+    "@hona/strobe-darwin-x64": ["@hona/strobe-darwin-x64@0.7.0", "", { "os": "darwin", "cpu": "x64" }, "sha512-jSiA1CADkAB+6OyNZnbzkqn19iHSheirTFxAmZUgGBJIZMfXEHDTOdxD+3iUj+wQgbG05CAJSzPeSDMpKx2ShQ=="],
+
+    "@hona/strobe-linux-arm64": ["@hona/strobe-linux-arm64@0.7.0", "", { "os": "linux", "cpu": "arm64" }, "sha512-7ud2CaF713VtHrxIMHK+hXVhHlEUiC5jxBVGKacHFI/v63OpJ2K5WnAzecbCe1hoTue1FCWM+8brCEx27CjL6w=="],
+
+    "@hona/strobe-linux-x64": ["@hona/strobe-linux-x64@0.7.0", "", { "os": "linux", "cpu": "x64" }, "sha512-/ALc8g5y/tEm02qsrJ2zSqVQ8Y185TJuQQa4bYyXbBTXK9qBoXgWzix611316+zsibijYDs0mKaOnDnNLyfgZA=="],
+
+    "@hona/strobe-win32-x64": ["@hona/strobe-win32-x64@0.7.0", "", { "os": "win32", "cpu": "x64" }, "sha512-k9cPXZCi4MMpgUETpWMZnZczbbqlTPLdyl5uhCgLRk3mA1p6BTGXy/DUaSGrZvlleUEJatNCPoBGL0iRNFoDCg=="],
 
     "@isaacs/cliui": ["@isaacs/cliui@8.0.2", "", { "dependencies": { "string-width": "^5.1.2", "string-width-cjs": "npm:string-width@^4.2.0", "strip-ansi": "^7.0.1", "strip-ansi-cjs": "npm:strip-ansi@^6.0.1", "wrap-ansi": "^8.1.0", "wrap-ansi-cjs": "npm:wrap-ansi@^7.0.0" } }, "sha512-O8jcjabXaleOG9DQ0+ARXWZBTfnP4WNAqzuiJK7ll44AmxGKv/J2M4TPjxjY3znBCfvBXFzucm1twdyFybFqEA=="],
 

@@ -5,17 +5,15 @@ import { homedir } from "node:os"
 import { basename, delimiter, isAbsolute, join } from "node:path"
 import type { events, Issues, Item, methods, Overview, PullRequest, Pulls } from "./schemas"
 import { apiPath, createGitHub, remember } from "./github"
-import { BRANCH_FORMAT, LOG_FORMAT, parseBranches, parseIssues, parseItem, parseLog, parseRemote, parseStatus, parseWorktrees, FIELD } from "./git"
+import { BRANCH_FORMAT, ITEM_QUERY, LOG_FORMAT, parseBranches, parseGqlItem, parseIssues, parseLog, parseRemote, parseStatus, parseWorktrees, FIELD, type GqlItem } from "./git"
 
 const ISSUE_FIELDS = "number,title,state,url,author,labels,assignees,updatedAt"
-// How long the token read from gh is used before it is read again; a 401 reads it again at once.
 // How long a checkout's folders, remote and default branch are reused before git is asked again.
 const FACTS_TTL = 60_000
 // How long the open pull request list for branch badges is used before a background refresh.
 const OPEN_PULLS_TTL = 2 * 60_000
+// How long the token read from gh is used before it is read again; a 401 reads it again at once.
 const TOKEN_TTL = 30 * 60_000
-const ITEM_FIELDS = "number,title,state,url,author,labels,assignees,updatedAt,createdAt,body,comments,milestone"
-const PR_FIELDS = `${ITEM_FIELDS},isDraft,headRefName,baseRefName,isCrossRepository,additions,deletions,changedFiles,reviewDecision,mergeable,statusCheckRollup,headRefOid,reviewRequests`
 const PULL_TTL = 60_000
 // Which pull request a branch had changes rarely, and the branch picker asks for every local branch at once.
 const HEADS_TTL = 5 * 60_000
@@ -132,16 +130,29 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
   // start and a new TLS handshake, about half a second each on Windows. Without a token (gh signed out, or a gh too old
   // for `auth token`) the callers fall back to gh itself.
   const token: { value?: Promise<string | null>; at: number } = { at: 0 }
+  const readToken = () =>
+    run("gh", ["auth", "token"], homedir(), { quiet: true }).then(
+      (output) => output.trim() || null,
+      () => null,
+    )
   const githubToken = () => {
-    if (!token.value || Date.now() - token.at > TOKEN_TTL) {
-      token.at = Date.now()
-      token.value = run("gh", ["auth", "token"], homedir(), { quiet: true }).then(
-        (output) => output.trim() || null,
-        () => null,
-      )
+    const known = token.value
+    if (known && Date.now() - token.at <= TOKEN_TTL) return known
+    token.at = Date.now()
+    const next = readToken()
+    // An old token keeps serving while the new one is read: gh takes half a second to start on Windows, and a token that
+    // went bad meanwhile answers 401, which reads it again at once.
+    if (!known) {
+      token.value = next
+      return next
     }
-    return token.value
+    void next.then((value) => {
+      token.value = Promise.resolve(value)
+    })
+    return known
   }
+  // Read now, so the panel's first GitHub request does not wait for gh to start.
+  void githubToken()
   const https = async (path: string, init: { method?: string; body?: string; signal?: AbortSignal }, retried = false): Promise<string | undefined> => {
     const secret = await githubToken()
     if (!secret) return undefined
@@ -186,6 +197,14 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
     const errors = (JSON.parse(direct) as { errors?: { message: string }[] }).errors
     if (errors?.length) throw new Error(errors.map((error) => error.message).join("\n"))
     return direct
+  }
+  /** A REST write with an optional JSON body, raw JSON back; gh when there is no token. */
+  const send = async (method: "POST" | "PATCH" | "DELETE", path: string, body?: unknown) => {
+    const json = body === undefined ? undefined : JSON.stringify(body)
+    return (
+      (await https(path, { method, body: json })) ??
+      run("gh", ["api", "-X", method, path, ...(json === undefined ? [] : ["--input", "-"])], homedir(), { input: json })
+    )
   }
   /** A REST read, raw JSON; gh when there is no token. */
   const rest = async (path: string, signal?: AbortSignal) => (await https(path, { signal })) ?? gh(homedir(), ["api", path], signal)
@@ -397,16 +416,14 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
   // gh needs a directory to run in; with --repo it never reads the repository there.
   const home = homedir()
 
+  // One GraphQL request, where gh needed a request to tell an issue from a pull request and a process for the rest.
   const readItem = async (repo: string, number: number): Promise<Item> => {
-    // SAFETY: the issues endpoint answers pull requests too, with a `pull_request` field.
-    const pr = (JSON.parse(await rest(apiPath(repo, `issues/${number}`))) as { pull_request?: unknown }).pull_request !== undefined
-    const view = (fields: string) => gh(home, [pr ? "pr" : "issue", "view", String(number), "--repo", repo, "--json", fields])
-    // Older gh releases lack the closing-reference fields; the item reads without its links there.
-    const output = await view(pr ? `${PR_FIELDS},closingIssuesReferences` : `${ITEM_FIELDS},stateReason,closedByPullRequestsReferences`).catch((error: unknown) => {
-      if (error instanceof Error && /unknown json field/i.test(error.message)) return view(pr ? PR_FIELDS : ITEM_FIELDS)
-      throw error
-    })
-    return parseItem(pr ? "pr" : "issue", repo, output)
+    const [owner, name] = apiPath(repo, "").split("/").slice(1, 3)
+    const output = await graphql(ITEM_QUERY, { owner: owner ?? "", name: name ?? "", number })
+    // SAFETY: ITEM_QUERY selects the fields GqlItem describes.
+    const node = (JSON.parse(output) as { data: { repository: { issueOrPullRequest: GqlItem | null } | null } }).data.repository?.issueOrPullRequest
+    if (!node) throw new Error(`${repo}#${number} does not exist or cannot be read.`)
+    return parseGqlItem(repo, node)
   }
 
   const changeItem = async <T>(repo: string, number: number, work: () => Promise<T>) => {
@@ -434,6 +451,7 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
     gh: (args) => gh(home, args),
     graphql: (query, variables) => graphql(query, variables),
     rest: (path) => rest(path),
+    send,
     ghInput: (args, input) => run("gh", args, home, { input }),
     changed: itemChanged,
     runChanged: (repo, id) => deps.emit("run", { repo, id }),
@@ -624,15 +642,15 @@ export function createBackend(deps: BackendDeps): { backend: Backend; kit: Backe
       })
       return value
     },
-    comment: ({ repo, number, kind, body }) =>
-      changeItem(repo, number, () => gh(home, [kind, "comment", String(number), "--repo", repo, "--body", body])),
+    comment: ({ repo, number, body }) => changeItem(repo, number, () => send("POST", apiPath(repo, `issues/${number}/comments`), { body }).then(() => "")),
     setState: ({ repo, number, kind, open, reason, duplicateOf, comment }) =>
       changeItem(repo, number, async () => {
         const note = comment?.trim()
-        if (!open && note) await gh(home, [kind, "comment", String(number), "--repo", repo, "--body", note])
+        const post = () => send("POST", apiPath(repo, `issues/${number}/comments`), { body: note })
+        if (!open && note) await post()
         if (!open) await github.closeItem(repo, number, kind, reason ?? "completed", duplicateOf)
         if (open) await github.reopenItem(repo, number, kind)
-        if (open && note) await gh(home, [kind, "comment", String(number), "--repo", repo, "--body", note])
+        if (open && note) await post()
         return ""
       }),
     createIssue: async ({ cwd, title, body }) => {

@@ -29,6 +29,8 @@ interface Deps {
   graphql(query: string, variables: Record<string, string | number>): Promise<string>
   /** A REST read's raw JSON, the same way. */
   rest(path: string): Promise<string>
+  /** A REST write with an optional JSON body, the same way. */
+  send(method: "POST" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<string>
   /** Runs gh with --repo style arguments; it never reads the repository in the directory. */
   gh(args: readonly string[]): Promise<string>
   /** Runs gh with `input` on its standard input, for request bodies that are more than flat fields. */
@@ -82,21 +84,17 @@ export function createGitHub(deps: Deps) {
     return value
   }
 
-  const files = async (repo: string, path: string, list = ".[]") => {
-    const output = await gh([
-      "api",
-      "--paginate",
-      apiPath(repo, path),
-      "--jq",
-      `${list} | {path: .filename, previous: .previous_filename, status, additions, deletions, patch}`,
-    ])
-    return lines(output).map(
-      (line): ChangedFile => {
-        // SAFETY: the jq filter above builds exactly these fields.
-        const file = JSON.parse(line) as { path: string; previous?: string | null; status: string; additions: number; deletions: number; patch?: string | null }
-        return { ...file, previous: file.previous ?? null, patch: file.patch ?? null }
-      },
-    )
+  /** Every page of a REST list, 100 items at a time; `key` names the list in endpoints that wrap it in an object. */
+  const restAll = async <T>(path: string, pages = 30, key?: string): Promise<T[]> => {
+    const all: T[] = []
+    for (let page = 1; page <= pages; page++) {
+      const body: unknown = JSON.parse(await deps.rest(`${path}${path.includes("?") ? "&" : "?"}per_page=100&page=${page}`))
+      // SAFETY: the callers name endpoints that answer a list of T, bare or under `key`.
+      const items = (key ? (body as Record<string, T[]>)[key] : body) as T[]
+      all.push(...items)
+      if (items.length < 100) break
+    }
+    return all
   }
 
   const graphql = deps.graphql
@@ -217,10 +215,10 @@ export function createGitHub(deps: Deps) {
   return {
     // A pull request's files only change with a new head commit; the window passes the head it shows. Without one
     // there is nothing to tell a stale list by.
-    prFiles: ({ repo, number, head }: { repo: string; number: number; head?: string }) =>
-      head
-        ? keep(prFiles, `${repo}#${number}@${head}`, () => files(repo, `pulls/${number}/files?per_page=100`), 50)
-        : files(repo, `pulls/${number}/files?per_page=100`),
+    prFiles: ({ repo, number, head }: { repo: string; number: number; head?: string }) => {
+      const read = () => restAll<GhFile>(apiPath(repo, `pulls/${number}/files`)).then((list) => list.map(fileOf))
+      return head ? keep(prFiles, `${repo}#${number}@${head}`, read, 50) : read()
+    },
 
     reviews: (input: { repo: string; number: number }) => {
       const key = `${input.repo}#${input.number}`
@@ -418,13 +416,9 @@ export function createGitHub(deps: Deps) {
         return []
       }
       const value = Promise.all([
-        gh(["label", "list", "--repo", repo, "--limit", "200", "--json", "name,color"]).then(
-          // SAFETY: gh returns the fields requested with --json.
-          (output) => (JSON.parse(output || "[]") as { name: string; color: string }[]).map((label) => ({ name: label.name, color: label.color })),
-          fallback,
-        ),
-        gh(["api", "--paginate", apiPath(repo, "assignees?per_page=100"), "--jq", ".[].login"]).then(lines, fallback),
-        gh(["api", apiPath(repo, "milestones?state=open&per_page=100"), "--jq", ".[].title"]).then(lines, fallback),
+        restAll<{ name: string; color: string }>(apiPath(repo, "labels"), 2).then((list) => list.map((label) => ({ name: label.name, color: label.color })), fallback),
+        restAll<{ login: string }>(apiPath(repo, "assignees")).then((list) => list.map((person) => person.login), fallback),
+        restAll<{ title: string }>(apiPath(repo, "milestones?state=open"), 1).then((list) => list.map((milestone) => milestone.title), fallback),
       ]).then(([labels, people, milestones]) => ({ labels, people, milestones }))
       remember(meta, repo, { time: Date.now(), value }, 20)
       // A partial answer still fills the editor, but the next open asks again.
@@ -435,30 +429,36 @@ export function createGitHub(deps: Deps) {
     },
 
     commit: ({ repo, sha }: { repo: string; sha: string }) => keep(commits, `${repo}@${sha}`, async () => {
-      const [info, changed] = await Promise.all([
-        gh(["api", apiPath(repo, `commits/${sha}`), "--jq", "{sha, url: .html_url, message: .commit.message, author: .commit.author.name, date: .commit.author.date, parents: [.parents[].sha]}"]),
-        files(repo, `commits/${sha}?per_page=100`, ".files[]").catch(() => []),
-      ])
-      // SAFETY: the jq filter above builds exactly these fields.
-      const parsed = JSON.parse(info) as { sha: string; url: string; message: string; author: string; date: string; parents: string[] }
-      return { repo, ...parsed, files: changed }
+      // One request: the commit carries its first 300 files.
+      // SAFETY: GitHub's commit endpoint answers these fields.
+      const commit = JSON.parse(await deps.rest(apiPath(repo, `commits/${sha}`))) as {
+        sha: string
+        html_url: string
+        commit: { message: string; author: { name: string; date: string } | null }
+        parents: { sha: string }[]
+        files?: GhFile[]
+      }
+      return {
+        repo,
+        sha: commit.sha,
+        url: commit.html_url,
+        message: commit.commit.message,
+        author: commit.commit.author?.name ?? "",
+        date: commit.commit.author?.date ?? "",
+        parents: commit.parents.map((parent) => parent.sha),
+        files: (commit.files ?? []).map(fileOf),
+      }
     }),
 
     runs: ({ repo, branch, fresh }: { repo: string; branch: string | null; fresh: boolean }) => {
       const key = `${repo}\n${branch ?? ""}`
       const cached = runs.get(key)
       if (!fresh && cached && Date.now() - cached.time < RUNS_TTL) return cached.value
-      const value = gh([
-        "run",
-        "list",
-        "--repo",
-        repo,
-        ...(branch ? ["--branch", branch] : []),
-        "--limit",
-        "30",
-        "--json",
-        "databaseId,displayTitle,workflowName,status,conclusion,event,headBranch,headSha,createdAt,url,attempt",
-      ]).then((output) => (JSON.parse(output || "[]") as GhRun[]).map(runOf))
+      const value = deps
+        // Without each run's pull requests, which GitHub is slow to gather.
+        .rest(apiPath(repo, `actions/runs?per_page=30&exclude_pull_requests=true${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`))
+        // SAFETY: GitHub's runs endpoint answers `workflow_runs`.
+        .then((output) => (JSON.parse(output) as { workflow_runs: GhRun[] }).workflow_runs.map(runOf))
       remember(runs, key, { time: Date.now(), value }, 50)
       value.catch(() => {
         if (runs.get(key)?.value === value) runs.delete(key)
@@ -470,27 +470,21 @@ export function createGitHub(deps: Deps) {
       // A finished run never changes until someone re-runs it, which drops it below.
       const done = finished.get(`${repo}#${id}`)
       if (done) return done
-      const output = await gh([
-        "run",
-        "view",
-        String(id),
-        "--repo",
-        repo,
-        "--json",
-        "databaseId,displayTitle,workflowName,status,conclusion,event,headBranch,headSha,createdAt,url,attempt,jobs",
+      const [run, jobs] = await Promise.all([
+        // SAFETY: GitHub's run endpoint answers a run.
+        deps.rest(apiPath(repo, `actions/runs/${id}`)).then((output) => JSON.parse(output) as GhRun),
+        restAll<GhJob>(apiPath(repo, `actions/runs/${id}/jobs`), 5, "jobs"),
       ])
-      // SAFETY: gh returns the fields requested with --json.
-      const parsed = JSON.parse(output) as GhRun & { jobs: GhJob[] }
       const details: RunDetails = {
-        run: runOf(parsed),
-        jobs: parsed.jobs.map(
+        run: runOf(run),
+        jobs: jobs.map(
           (job): Job => ({
-            id: job.databaseId,
+            id: job.id,
             name: job.name,
             status: job.status,
             conclusion: job.conclusion ?? "",
-            started: job.startedAt || null,
-            completed: job.completedAt || null,
+            started: job.started_at || null,
+            completed: job.completed_at || null,
             steps: (job.steps ?? []).map((step) => ({ number: step.number, name: step.name, status: step.status, conclusion: step.conclusion ?? "" })),
           }),
         ),
@@ -502,7 +496,7 @@ export function createGitHub(deps: Deps) {
     jobLog: async ({ repo, job }: { repo: string; job: number }) => {
       const known = logs.get(`${repo}#${job}`)
       if (known) return known
-      const raw = await gh(["api", apiPath(repo, `actions/jobs/${job}/logs`)])
+      const raw = await deps.rest(apiPath(repo, `actions/jobs/${job}/logs`))
       // Drop the runner's timestamps and color codes; keep its ##[group] and ##[error] markers for the viewer.
       const output = raw
         .replace(/^\uFEFF/, "")
@@ -596,51 +590,49 @@ export function createGitHub(deps: Deps) {
     /** Posts a comment and returns its id, so it can be deleted again. */
     addComment: (repo: string, number: number, body: string) =>
       change(repo, number, async () => {
-        const output = await gh(["api", "-X", "POST", apiPath(repo, `issues/${number}/comments`), "-f", `body=${body}`, "--jq", "{id: .id, url: .html_url}"])
-        // SAFETY: the jq filter above builds exactly these fields.
-        return JSON.parse(output) as { id: number; url: string }
+        // SAFETY: GitHub answers the created comment.
+        const created = JSON.parse(await deps.send("POST", apiPath(repo, `issues/${number}/comments`), { body })) as { id: number; html_url: string }
+        return { id: created.id, url: created.html_url }
       }),
 
-    deleteComment: (repo: string, number: number, id: number) =>
-      change(repo, number, () => gh(["api", "-X", "DELETE", apiPath(repo, `issues/comments/${id}`)])),
+    deleteComment: (repo: string, number: number, id: number) => change(repo, number, () => deps.send("DELETE", apiPath(repo, `issues/comments/${id}`))),
 
     /** Closes an issue with a reason, or a pull request; returns the comment it had to post for an older gh's duplicate. */
     closeItem: (repo: string, number: number, item: "issue" | "pr", reason: "completed" | "not_planned" | "duplicate", duplicateOf?: number) =>
       change(repo, number, async (): Promise<{ commentId?: number; url?: string }> => {
-        if (item === "pr") return gh(["pr", "close", String(number), "--repo", repo]).then(() => ({}))
-        const close = (why: "completed" | "not_planned") => gh(["issue", "close", String(number), "--repo", repo, "--reason", why === "not_planned" ? "not planned" : "completed"]).then(() => ({}))
+        if (item === "pr") return deps.send("PATCH", apiPath(repo, `pulls/${number}`), { state: "closed" }).then(() => ({}))
+        const close = (why: "completed" | "not_planned") => deps.send("PATCH", apiPath(repo, `issues/${number}`), { state: "closed", state_reason: why }).then(() => ({}))
         if (reason !== "duplicate" || !duplicateOf) return close(reason === "not_planned" ? "not_planned" : "completed")
         return gh(["issue", "close", String(number), "--repo", repo, "--duplicate-of", String(duplicateOf)]).then(
           () => ({}),
           async (error: unknown) => {
             if (!/unknown flag/i.test(message(error))) throw error
             // gh before --duplicate-of: GitHub reads "Duplicate of #N" as marking the duplicate.
-            const output = await gh(["api", "-X", "POST", apiPath(repo, `issues/${number}/comments`), "-f", `body=Duplicate of #${duplicateOf}`, "--jq", "{id: .id, url: .html_url}"])
+            // SAFETY: GitHub answers the created comment.
+            const created = JSON.parse(await deps.send("POST", apiPath(repo, `issues/${number}/comments`), { body: `Duplicate of #${duplicateOf}` })) as { id: number; html_url: string }
             await close("not_planned")
-            // SAFETY: the jq filter above builds exactly these fields.
-            const created = JSON.parse(output) as { id: number; url: string }
-            return { commentId: created.id, url: created.url }
+            return { commentId: created.id, url: created.html_url }
           },
         )
       }, item === "pr" ? { state: "CLOSED" } : { state: "CLOSED", reason: reason === "duplicate" && !duplicateOf ? "completed" : reason }),
 
     reopenItem: (repo: string, number: number, item: "issue" | "pr") =>
-      change(repo, number, () => gh([item, "reopen", String(number), "--repo", repo]), { state: "OPEN" }),
+      change(repo, number, () => deps.send("PATCH", apiPath(repo, `${item === "pr" ? "pulls" : "issues"}/${number}`), { state: "open" }), { state: "OPEN" }),
 
     /** Adds and removes labels or assignees through the issues API, which covers pull requests too. */
     editPeople: (repo: string, number: number, kind: "labels" | "assignees", add: readonly string[], remove: readonly string[]) =>
       change(repo, number, async () => {
         const path = apiPath(repo, `issues/${number}/${kind}`)
-        const fields = (names: readonly string[]) => names.flatMap((value) => ["-f", `${kind}[]=${value}`])
-        if (add.length > 0) await gh(["api", "-X", "POST", path, ...fields(add)])
+        if (add.length > 0) await deps.send("POST", path, { [kind]: add })
         if (remove.length === 0) return
-        if (kind === "assignees") return void (await gh(["api", "-X", "DELETE", path, ...fields(remove)]))
-        for (const label of remove) await gh(["api", "-X", "DELETE", `${path}/${encodeURIComponent(label)}`])
+        if (kind === "assignees") return void (await deps.send("DELETE", path, { assignees: remove }))
+        await Promise.all(remove.map((label) => deps.send("DELETE", `${path}/${encodeURIComponent(label)}`)))
       }),
 
     /** The signed-in user's login, for `@me`. */
     viewer: () => {
-      viewer.value ??= gh(["api", "user", "--jq", ".login"]).then((output) => output.trim())
+      // SAFETY: GitHub's user endpoint answers `login`.
+      viewer.value ??= deps.rest("user").then((output) => (JSON.parse(output) as { login: string }).login)
       viewer.value.catch(() => (viewer.value = undefined))
       return viewer.value
     },
@@ -721,43 +713,57 @@ interface GqlPull {
   }
 }
 
+// GitHub's REST shapes, only the fields read.
 interface GhRun {
-  databaseId: number
-  displayTitle: string
-  workflowName: string
+  id: number
+  display_title: string
+  name: string | null
   status: string
-  conclusion?: string
+  conclusion: string | null
   event: string
-  headBranch: string
-  headSha: string
-  createdAt: string
-  url: string
-  attempt?: number
+  head_branch: string | null
+  head_sha: string
+  created_at: string
+  html_url: string
+  run_attempt?: number
 }
 
 interface GhJob {
-  databaseId: number
+  id: number
   name: string
   status: string
-  conclusion?: string
-  startedAt?: string
-  completedAt?: string
-  steps?: { number: number; name: string; status: string; conclusion?: string }[]
+  conclusion: string | null
+  started_at: string | null
+  completed_at: string | null
+  steps?: { number: number; name: string; status: string; conclusion: string | null }[]
+}
+
+interface GhFile {
+  filename: string
+  previous_filename?: string
+  status: string
+  additions: number
+  deletions: number
+  patch?: string
+}
+
+function fileOf(file: GhFile): ChangedFile {
+  return { path: file.filename, previous: file.previous_filename ?? null, status: file.status, additions: file.additions, deletions: file.deletions, patch: file.patch ?? null }
 }
 
 function runOf(run: GhRun): Run {
   return {
-    id: run.databaseId,
-    title: run.displayTitle,
-    workflow: run.workflowName,
+    id: run.id,
+    title: run.display_title,
+    workflow: run.name?.trim() ?? "",
     status: run.status,
     conclusion: run.conclusion ?? "",
-    branch: run.headBranch,
+    branch: run.head_branch ?? "",
     event: run.event,
-    sha: run.headSha,
-    created: run.createdAt,
-    url: run.url,
-    attempt: run.attempt ?? 1,
+    sha: run.head_sha,
+    created: run.created_at,
+    url: run.html_url,
+    attempt: run.run_attempt ?? 1,
   }
 }
 
@@ -788,10 +794,6 @@ function parseNotifications(output: string): InboxEntry[] {
       url: number ? `${item.repository.html_url}/${kind === "pr" ? "pull" : "issues"}/${number}` : item.repository.html_url,
     }
   })
-}
-
-function lines(output: string) {
-  return output.split(/\r?\n/).filter(Boolean)
 }
 
 /** A REST path under a repository; the name comes from links and the window, so it must not climb out of `repos/`. */
