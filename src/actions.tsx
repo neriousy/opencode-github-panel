@@ -212,22 +212,24 @@ export function createActions(ctx: SetupContext<typeof definition>) {
   // A section an item tab should show first, such as Files for a link to a pull request's files. The tab reads it once.
   const focus = new Map<string, string>()
 
-  const openTab = (target: TabTarget, fallback: string) => {
+  // A click previews: the next one replaces the tab, so looking through a list does not pile tabs up. `keep` (a double
+  // click) adds a tab that stays.
+  const openTab = (target: TabTarget, fallback: string, keep = false) => {
     const session = ctx.sessions.current()
     if (!session) {
       ctx.system.openExternal(fallback)
       return
     }
-    ctx.layout.open(`${ctx.id}:${tabId(target)}`, session, { tab: "select", background: true })
+    ctx.layout.open(`${ctx.id}:${tabId(target)}`, session, { tab: keep ? "select" : "preview", background: true })
   }
 
   // An open without a section clears an older request that no mount consumed (the tab was already open), so it does not
   // apply the next time the tab mounts.
-  const openItem = (ref: ItemRef, section?: "files" | "checks") => {
+  const openItem = (ref: ItemRef, section?: "files" | "checks", keep = false) => {
     const id = tabId({ kind: "item", ref })
     if (section) focus.set(id, section)
     if (!section) focus.delete(id)
-    openTab({ kind: "item", ref }, `https://github.com/${ref.repo}/issues/${ref.number}`)
+    openTab({ kind: "item", ref }, `https://github.com/${ref.repo}/issues/${ref.number}`, keep)
   }
 
   const openRun = (repo: string, id: number, job?: number | null) => {
@@ -257,7 +259,7 @@ export function createActions(ctx: SetupContext<typeof definition>) {
           dialog.close()
           const created = /\/issues\/(\d+)/.exec(url)
           const repo = /github\.com\/([^/]+\/[^/]+)\//.exec(url)
-          if (created?.[1] && repo?.[1]) openItem({ repo: repo[1], number: Number(created[1]) })
+          if (created?.[1] && repo?.[1]) openItem({ repo: repo[1], number: Number(created[1]) }, undefined, true)
         }}
       />
     ))

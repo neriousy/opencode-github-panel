@@ -900,7 +900,7 @@ function ItemRow(props: {
   onMount(() => actions?.querySelector("button")?.setAttribute("tabindex", "-1"))
 
   const items = (): UiMenuEntry[] => [
-    { label: t("action.openDetails"), icon: "info", onSelect: () => openItem(s, props.item, false) },
+    { label: t("action.openDetails"), icon: "info", onSelect: () => s.actions.openItem({ repo: props.item.repo, number: props.item.number }, undefined, true) },
     { label: t("action.openOnGitHub"), icon: "square-arrow-top-right", onSelect: () => openItem(s, props.item, true) },
     { label: t("action.copyLink"), icon: "link", onSelect: () => void s.actions.copy(props.item.url) },
     { type: "separator" },
@@ -983,6 +983,10 @@ function ItemRow(props: {
         props.onSelect(props.index)
         if (event.shiftKey) return props.onPick(props.index, true)
         openItem(s, props.item, event.metaKey || event.ctrlKey)
+      }}
+      onDblClick={(event) => {
+        if (event.shiftKey || event.metaKey || event.ctrlKey) return
+        s.actions.openItem({ repo: props.item.repo, number: props.item.number }, undefined, true)
       }}
       onContextMenu={(event) => {
         event.preventDefault()

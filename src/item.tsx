@@ -4,7 +4,7 @@ import { AgentBanner } from "./activity"
 import { createDraft, DraftBanner } from "./drafting"
 import { createEditor } from "./edit"
 import { createFolds } from "./fold"
-import { Conversation, PrChecks, PrFiles } from "./pr"
+import { Conversation, PrChecks, PrFiles, writtenCount } from "./pr"
 import { createKeyed, usePlugin, type Context, type MountedSession, type UiMenuEntry } from "@opencode/plugin/gui"
 import { latest } from "./queries"
 import { allowed, errorMessage, repoOf, type Actions } from "./actions"
@@ -35,6 +35,8 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
   const overview = latest(q.query(() => q.options.overview(props.session.directory)))
   const local = () => repoOf(overview.latest) === props.item.repo
   const refresh = () => q.invalidate(q.keys.item(props.item))
+  const written = () => (data.latest ? writtenCount(data.latest, reviews.latest) : 0)
+  const unresolved = () => reviews.latest?.threads.filter((thread) => !thread.resolved).length ?? 0
   const draft = createDraft({ ref: props.item, item: () => data.latest, session: props.session, actions: props.actions })
   // Loads the Files section while the user reads the conversation, so switching to it is instant.
   createKeyed(
@@ -130,19 +132,16 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
               <div class="ghp-item-scroll">
                 <header class="ghp-item-header">
                   <div class="ghp-item-top">
-                    <StateChip ctx={ctx} item={row()} />
-                    <span class="ghp-faint ghp-ellipsis">
-                      {row().repo}#{row().number}
-                    </span>
-                    <div class="ghp-spacer" />
+                    <h2 class="ghp-item-title">
+                      {row().title} <span class="ghp-item-number">#{row().number}</span>
+                    </h2>
                     <ui.Loader size="small" />
                   </div>
-                  <h2 class="ghp-item-title">{row().title}</h2>
                   <div class="ghp-item-meta">
+                    <StateChip ctx={ctx} item={row()} inline />
                     <span>
-                      <b>{row().author}</b> {t("item.opened", { ago: ago(Date.parse(row().created) / 1000) })}
+                      · <b>{row().author}</b> {t("item.opened", { ago: ago(Date.parse(row().created) / 1000) })}
                     </span>
-                    <span>· {ctx.plural("item.comments", row().comments)}</span>
                   </div>
                   <div class="ghp-item-labels">
                     <For each={row().labels}>{(label) => <LabelPill label={label} />}</For>
@@ -158,11 +157,13 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
           <div class="ghp-item-scroll">
             <header class="ghp-item-header">
               <div class="ghp-item-top">
-                <StateChip ctx={ctx} item={current()} />
-                <span class="ghp-faint ghp-ellipsis">
-                  {current().repo}#{current().number}
-                </span>
-                <div class="ghp-spacer" />
+                <h2 class="ghp-item-title">
+                  {current().title}{" "}
+                  {/* The tab says the number; another repository's item says whose. */}
+                  <span class="ghp-item-number">
+                    {local() ? "" : current().repo}#{current().number}
+                  </span>
+                </h2>
                 <Show when={data.loading}>
                   <ui.Loader size="small" />
                 </Show>
@@ -194,17 +195,16 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
                   placement="bottom-end"
                   items={props.actions.agentMenu(props.item, current().kind)}
                 />
-                <ui.Menu label={t("edit.menu")} trigger="icon" icon="edit" placement="bottom-end" items={edits(current())} />
-                <ui.Menu label={t("action.more")} trigger="icon" icon="outline-dots" placement="bottom-end" items={more(current())} />
+                <ui.Menu label={t("action.more")} trigger="icon" icon="outline-dots" placement="bottom-end" items={[...edits(current()), { type: "separator" }, ...more(current())]} />
               </div>
-              <h2 class="ghp-item-title">{current().title}</h2>
               <div class="ghp-item-meta">
+                <StateChip ctx={ctx} item={current()} inline />
                 <Show
                   when={current().pr}
                   fallback={
                     <>
                       <span>
-                        <b>{current().author}</b> {t("item.opened", { ago: ago(Date.parse(current().created) / 1000) })}
+                        · <b>{current().author}</b> {t("item.opened", { ago: ago(Date.parse(current().created) / 1000) })}
                       </span>
                     </>
                   }
@@ -212,13 +212,25 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
                   {(pr) => (
                     <>
                       <span class="ghp-item-merge">
-                        <b>{current().author}</b> {t("item.wantsToMerge")} <code>{pr().head}</code>
+                        · <b>{current().author}</b> {t("item.wantsToMerge")} <code>{pr().head}</code>
                         <span class="ghp-faint">→</span>
                         <code>{pr().base}</code>
                       </span>
                       <span>· {ago(Date.parse(current().created) / 1000)}</span>
                       <Show when={pr().cross}>
                         <span>· {t("item.fork")}</span>
+                      </Show>
+                      <Show when={current().state === "OPEN" && pr().review}>
+                        {(review) => (
+                          <span class="ghp-item-review" data-review={review()}>
+                            · {t(`pulls.review.${review()}`)}
+                          </span>
+                        )}
+                      </Show>
+                      <Show when={current().state === "OPEN" && unresolved() > 0}>
+                        <button type="button" class="ghp-item-unresolved" onClick={() => setSection("conversation")}>
+                          · {t("view.unresolved", { count: unresolved() })}
+                        </button>
                       </Show>
                     </>
                   )}
@@ -235,34 +247,6 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
                     </span>
                   </Show>
                 </div>
-              </Show>
-              <Show when={current().pr}>
-                {(pr) => (
-                  // One line of facts, plain text between dots; only colour says something is wrong.
-                  <div class="ghp-item-facts">
-                    <button type="button" class="ghp-fact" onClick={() => setSection("files")}>
-                      <span class="ghp-add">+{pr().additions}</span> <span class="ghp-del">−{pr().deletions}</span>{" "}
-                      <span class="ghp-faint">{ctx.plural("item.files", pr().files)}</span>
-                    </button>
-                    <Show when={current().state === "OPEN" && pr().mergeable === "CONFLICTING"}>
-                      <span class="ghp-fact" data-mergeable={pr().mergeable}>
-                        {t(`item.mergeable.${pr().mergeable}`)}
-                      </span>
-                    </Show>
-                    <Show when={pr().review}>
-                      {(review) => (
-                        <span class="ghp-fact" data-review={review()}>
-                          {t(`pulls.review.${review()}`)}
-                        </span>
-                      )}
-                    </Show>
-                    <Show when={pr().checks.length > 0}>
-                      <button type="button" class="ghp-fact" onClick={() => setSection("checks")}>
-                        <ChecksSummary checks={pr().checks} />
-                      </button>
-                    </Show>
-                  </div>
-                )}
               </Show>
               <Show when={current().kind === "issue"}>
                 <LinkedWork
@@ -290,8 +274,13 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
                         onClick={() => setSection(id)}
                       >
                         {t(`item.section.${id}`)}
+                        <Show when={id === "conversation" && written() > 0}>
+                          <span class="ghp-tab-count">{written()}</span>
+                        </Show>
                         <Show when={id === "files"}>
-                          <span class="ghp-tab-count">{pr().files}</span>
+                          <span class="ghp-tab-count" title={ctx.plural("item.files", pr().files)}>
+                            <span class="ghp-add">+{pr().additions}</span> <span class="ghp-del">−{pr().deletions}</span>
+                          </span>
                         </Show>
                         <Show when={id === "files" && draft.draft()}>
                           {(current) => (
@@ -301,14 +290,24 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
                           )}
                         </Show>
                         <Show when={id === "checks" && pr().checks.length > 0}>
-                          <span class="ghp-tab-count">{pr().checks.length}</span>
-                        </Show>
-                        <Show when={id === "conversation" && (reviews.latest?.threads.filter((thread) => !thread.resolved).length ?? 0) > 0}>
-                          <span class="ghp-tab-count">💬 {reviews.latest?.threads.filter((thread) => !thread.resolved).length}</span>
+                          <span class="ghp-tab-count" title={checksTitle(pr().checks)}>
+                            <span class="ghp-check-dot" data-state={checksState(pr().checks)} /> {pr().checks.length}
+                          </span>
                         </Show>
                       </button>
                     )}
                   </For>
+                  <div class="ghp-spacer" />
+                  <Show when={section() === "conversation"}>
+                    <ui.Tooltip value={folds.conversation.all() ? t("view.unfoldAll") : t("view.foldAll")}>
+                      <ui.IconButton
+                        icon={folds.conversation.all() ? "expand" : "collapse"}
+                        label={folds.conversation.all() ? t("view.unfoldAll") : t("view.foldAll")}
+                        size="small"
+                        onClick={() => folds.conversation.foldAll(!folds.conversation.all())}
+                      />
+                    </ui.Tooltip>
+                  </Show>
                 </div>
               )}
             </Show>
@@ -321,7 +320,15 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
                 <PrChecks item={current()} actions={props.actions} folds={folds.checks} />
               </Match>
               <Match when={true}>
-                <Conversation item={current()} reviews={reviews.latest} actions={props.actions} folds={folds.conversation} draft={draft} onOpenDraft={() => setSection("files")} />
+                <Conversation
+                  item={current()}
+                  reviews={reviews.latest}
+                  actions={props.actions}
+                  folds={folds.conversation}
+                  draft={draft}
+                  onOpenDraft={() => setSection("files")}
+                  bar={current().kind === "issue"}
+                />
 
               </Match>
             </Switch>
@@ -395,6 +402,10 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
                   {/* Only for someone who can push to the base, as on GitHub; issue #1. */}
                   <Show when={current().pr && current().state === "OPEN" && !current().draft && allowed(current(), "merge") ? current().pr : undefined}>
                     {(pr) => (
+                      <>
+                      <Show when={pr().mergeable === "CONFLICTING"}>
+                        <span class="ghp-conflicts">{t("item.mergeable.CONFLICTING")}</span>
+                      </Show>
                       <ui.Button
                         size="small"
                         variant="neutral"
@@ -409,6 +420,7 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
                       >
                         {t("action.mergePr")}
                       </ui.Button>
+                      </>
                     )}
                   </Show>
                   <Show when={current().kind === "pr" && current().state === "OPEN"}>
@@ -727,7 +739,8 @@ export function ItemCard(props: { ctx: Context; item: Item }) {
   )
 }
 
-export function StateChip(props: { ctx: Context; item: Pick<Item, "kind" | "state" | "draft" | "reason"> }) {
+/** `inline`: coloured text in a line of meta, rather than a filled chip. */
+export function StateChip(props: { ctx: Context; item: Pick<Item, "kind" | "state" | "draft" | "reason">; inline?: boolean }) {
   const state = () => (props.item.draft && props.item.state === "OPEN" ? "DRAFT" : props.item.state)
   const reason = () => (props.item.kind === "issue" && props.item.state === "CLOSED" ? props.item.reason : undefined)
   const label = () => {
@@ -737,7 +750,7 @@ export function StateChip(props: { ctx: Context; item: Pick<Item, "kind" | "stat
     return props.ctx.t(`pulls.state.${props.item.state}`)
   }
   return (
-    <span class="ghp-state" data-state={state()} data-kind={props.item.kind} data-reason={reason()}>
+    <span class="ghp-state" data-state={state()} data-kind={props.item.kind} data-reason={reason()} data-inline={props.inline ? "" : undefined}>
       <Switch>
         <Match when={props.item.kind === "pr"}>
           <PrIcon state={state()} />
@@ -782,6 +795,17 @@ export function LabelPill(props: { label: Label }) {
       {props.label.name}
     </span>
   )
+}
+
+function checksState(checks: readonly Check[]) {
+  if (checks.some((check) => check.state === "failure")) return "failure"
+  if (checks.some((check) => check.state === "pending")) return "pending"
+  return "success"
+}
+
+function checksTitle(checks: readonly Check[]) {
+  const count = (state: Check["state"]) => checks.filter((check) => check.state === state).length
+  return [`${count("success")} passed`, count("failure") ? `${count("failure")} failed` : "", count("pending") ? `${count("pending")} running` : ""].filter(Boolean).join(", ")
 }
 
 function ChecksSummary(props: { checks: readonly Check[] }) {

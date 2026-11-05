@@ -289,7 +289,7 @@ export const en = {
   "toast.closed.not_planned": "Closed #{{number}} as not planned",
   "toast.closed.duplicate": "Closed #{{number}} as a duplicate",
   "toast.closed.pr": "Closed #{{number}}",
-  "action.openDetails": "Show details",
+  "action.openDetails": "Open in a new tab",
 
   "dialog.issueNew": "New issue",
   "dialog.issueCreate": "Create issue",

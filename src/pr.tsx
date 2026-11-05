@@ -42,7 +42,17 @@ export function isBot(login: string) {
 }
 
 /** The description, then comments, reviews and review threads in the order they happened. */
-export function Conversation(props: { item: Item; reviews: Reviews | undefined; actions: Actions; folds: Folds; draft?: Draft; onOpenDraft?: () => void }) {
+/** Everything someone wrote after the description: comments, reviews with text, and every reply in review threads. */
+export function writtenCount(item: Item, reviews: Reviews | undefined) {
+  return (
+    item.comments.length +
+    (reviews?.reviews ?? []).filter((review) => review.state !== "PENDING" && review.body.trim()).length +
+    (reviews?.threads ?? []).reduce((total, thread) => total + thread.comments.length, 0)
+  )
+}
+
+/** `bar`: the count and Fold all above the entries; a pull request has them in its section tabs instead. */
+export function Conversation(props: { item: Item; reviews: Reviews | undefined; actions: Actions; folds: Folds; draft?: Draft; onOpenDraft?: () => void; bar?: boolean }) {
   const ctx = usePlugin()
   const ui = ctx.ui
   const t = ctx.t
@@ -70,11 +80,7 @@ export function Conversation(props: { item: Item; reviews: Reviews | undefined; 
     return [...comments, ...reviews, ...threads].sort((a, b) => a.at.localeCompare(b.at))
   })
   const unresolved = () => (props.reviews?.threads ?? []).filter((thread) => !thread.resolved).length
-  // Everything someone wrote after the description: comments, reviews with text, and every reply in review threads.
-  const written = () =>
-    props.item.comments.length +
-    (props.reviews?.reviews ?? []).filter((review) => review.state !== "PENDING" && review.body.trim()).length +
-    (props.reviews?.threads ?? []).reduce((total, thread) => total + thread.comments.length, 0)
+  const written = () => writtenCount(props.item, props.reviews)
   const split = () => Math.max(0, entries().length - RECENT)
   const earlier = () => props.folds.smart() && props.folds.all() !== false && !props.folds.flag("earlier") && entries().length > LONG
   const head = () => entries().slice(0, earlier() ? 1 : split())
@@ -128,6 +134,7 @@ export function Conversation(props: { item: Item; reviews: Reviews | undefined; 
 
   return (
     <div class="ghp-conv">
+      <Show when={props.bar !== false}>
       <div class="ghp-bar">
         <span class="ghp-faint ghp-ellipsis">
           {ctx.plural("item.comments", written())}
@@ -146,6 +153,7 @@ export function Conversation(props: { item: Item; reviews: Reviews | undefined; 
           </ui.Button>
         </Show>
       </div>
+      </Show>
       <Note
         id="description"
         author={props.item.author}

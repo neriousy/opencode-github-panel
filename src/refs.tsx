@@ -350,7 +350,7 @@ function RefMenu(props: { ctx: Context; actions: Actions; target: { ref: ItemRef
     const open = current?.state === "OPEN"
     const directory = cwd()
     return [
-      { label: t("action.openDetails"), icon: "info", onSelect: () => actions.openItem(ref) },
+      { label: t("action.openDetails"), icon: "info", onSelect: () => actions.openItem(ref, undefined, true) },
       { label: t("action.openOnGitHub"), icon: "square-arrow-top-right", onSelect: () => ctx.system.openExternal(url()) },
       { label: t("action.copyLink"), icon: "link", onSelect: () => void actions.copy(url()) },
       { label: t("ref.copyRef"), icon: "copy", onSelect: () => void actions.copy(`${ref.repo}#${ref.number}`) },

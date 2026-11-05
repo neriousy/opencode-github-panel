@@ -35,8 +35,94 @@
   padding: 12px;
 }
 
+/* Title first, with the item's tools beside it; the number follows the title quietly. */
+.ghp-item-top {
+  align-items: flex-start;
+}
+
 .ghp-item-title {
+  flex: 1;
+  min-width: 0;
   margin: 0;
+}
+
+.ghp-item-number {
+  color: var(--v2-text-text-faint);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+/* The state as coloured text leading the meta line, not a filled chip. */
+.ghp-state[data-inline] {
+  height: auto;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--ghp-open);
+
+  &[data-state="MERGED"],
+  &[data-state="CLOSED"][data-kind="issue"] {
+    background: none;
+    color: var(--ghp-merged);
+  }
+
+  &[data-state="CLOSED"] {
+    background: none;
+    color: var(--ghp-closed);
+  }
+
+  &[data-state="CLOSED"][data-kind="issue"][data-reason="not_planned"],
+  &[data-state="CLOSED"][data-kind="issue"][data-reason="duplicate"] {
+    background: none;
+    color: var(--v2-text-text-muted);
+  }
+
+  &[data-state="DRAFT"] {
+    background: none;
+    color: var(--v2-text-text-muted);
+  }
+}
+
+.ghp-item-review {
+  &[data-review="APPROVED"] {
+    color: var(--ghp-open);
+  }
+
+  &[data-review="CHANGES_REQUESTED"] {
+    color: var(--ghp-closed);
+  }
+}
+
+/* Review threads still open, as words in the meta line. */
+.ghp-item-unresolved {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--v2-state-fg-warning, #d97706);
+  font: inherit;
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+}
+
+/* Why Merge may fail, beside it. */
+.ghp-conflicts {
+  color: var(--ghp-closed);
+  font-size: 12px;
+}
+
+.ghp-item-tabs .ghp-tab-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+
+  .ghp-check-dot {
+    width: 6px;
+    height: 6px;
+  }
 }
 
 .ghp-item-meta {
@@ -63,51 +149,6 @@
     line-height: 18px;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-}
-
-/* A pull request's facts on one line, dots between; colour only where something needs attention. */
-.ghp-item-facts {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  row-gap: 2px;
-  color: var(--v2-text-text-muted);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-
-  > * + *::before {
-    content: "·";
-    margin-inline: 6px;
-    color: var(--v2-text-text-faint);
-  }
-}
-
-.ghp-fact {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: inherit;
-  font: inherit;
-
-  &:is(button) {
-    cursor: pointer;
-
-    &:hover {
-      color: var(--v2-text-text-base);
-    }
-  }
-
-  &[data-mergeable="CONFLICTING"],
-  &[data-review="CHANGES_REQUESTED"] {
-    color: var(--ghp-closed);
-  }
-
-  &[data-review="APPROVED"] {
-    color: var(--ghp-open);
   }
 }
 
