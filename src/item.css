@@ -303,12 +303,6 @@
   }
 }
 
-.ghp-item-reply {
-  margin: 0;
-  padding: 10px 12px 0;
-  border-top: var(--ghp-divider);
-}
-
 /* Review threads: a header row, then the code and replies on a rail. No box: in the conversation it is an entry, in a
    diff it sits between the lines. */
 

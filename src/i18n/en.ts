@@ -313,7 +313,7 @@ export const en = {
   "review.approve": "Approve",
   "review.requestChanges": "Request changes",
   "review.comment": "Comment as review",
-  "review.ownPr": "GitHub does not let you approve or request changes on your own pull request.",
+  "review.ownPr": "Not on your own pull request",
   "review.sent.APPROVE": "Approved",
   "review.sent.REQUEST_CHANGES": "Changes requested",
   "review.sent.COMMENT": "Review submitted",

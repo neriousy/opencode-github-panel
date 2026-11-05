@@ -155,6 +155,7 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
         }
       >
         {(current) => (
+          <>
           <div class="ghp-item-scroll">
             <AgentBanner item={props.item} session={props.session} actions={props.actions} />
             <DraftBanner draft={draft} onOpen={() => setSection("files")} />
@@ -261,24 +262,6 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
                             {t("edit.ready")}
                           </ui.Button>
                         </Show>
-                        <ui.Button
-                          size="small"
-                          variant="contrast"
-                          icon="fork"
-                          busy={busy() === "merge"}
-                          disabled={current().draft || !!busy()}
-                          onClick={() =>
-                            void run("merge", () =>
-                              props.actions.mergePr(
-                                props.session.directory,
-                                { number: current().number, title: current().title, head: pr().head },
-                                current().repo,
-                              ),
-                            )
-                          }
-                        >
-                          {t("action.mergePr")}
-                        </ui.Button>
                       </div>
                     </Show>
                   </>
@@ -357,67 +340,93 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
               <Match when={true}>
                 <Conversation item={current()} reviews={reviews.latest} actions={props.actions} folds={folds.conversation} draft={draft} onOpenDraft={() => setSection("files")} />
 
-                <div class="ghp-item-reply">
-                  <textarea
-                    class="ghp-textarea"
-                    rows={3}
-                    placeholder={t("item.commentPlaceholder")}
-                    aria-label={t("item.commentPlaceholder")}
-                    value={comment()}
-                    onInput={(event) => setComment(event.currentTarget.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                        event.preventDefault()
-                        void send(current())
-                      }
-                    }}
-                  />
-                  <div class="ghp-item-actions">
-                    <Show when={current().state === "OPEN"} fallback={
-                      <Show when={current().state === "CLOSED"}>
-                        <ui.Button
-                          size="small"
-                          variant="ghost"
-                          disabled={!!busy()}
-                          onClick={() =>
-                            void run("state", async () => {
-                              const typed = comment()
-                              const done = await props.actions.setItemState(current(), true, { comment: typed.trim() })
-                              if (done !== undefined && comment() === typed) setComment("")
-                            })
-                          }
-                        >
-                          {comment().trim() ? t("close.reopenWithComment") : t("action.reopen")}
-                        </ui.Button>
-                      </Show>
-                    }>
-                      <ui.Menu
-                        label={comment().trim() ? t("close.withComment") : t(current().kind === "pr" ? "close.pr" : "close.issue")}
-                        trigger="button"
-                        icon="circle-x"
-                        placement="top-start"
+              </Match>
+            </Switch>
+          </div>
+          <Show when={current().kind === "issue" || section() === "conversation"}>
+            {/* Pinned under the conversation, like the session's composer: the reply and what to do with the item
+                stay in reach however far the conversation scrolls. */}
+            <footer class="ghp-item-composer">
+              <div class="ghp-composer-box">
+                <textarea
+                  class="ghp-composer-input"
+                  rows={2}
+                  placeholder={t("item.commentPlaceholder")}
+                  aria-label={t("item.commentPlaceholder")}
+                  value={comment()}
+                  onInput={(event) => setComment(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                      event.preventDefault()
+                      void send(current())
+                    }
+                  }}
+                />
+                <div class="ghp-composer-bar">
+                  <Show when={current().state === "OPEN"} fallback={
+                    <Show when={current().state === "CLOSED"}>
+                      <ui.Button
+                        size="small"
+                        variant="ghost"
                         disabled={!!busy()}
-                        items={props.actions.closeMenu(
-                          current(),
-                          (work) =>
-                            void run("state", async () => {
-                              const typed = comment()
-                              const done = await work()
-                              if (done !== undefined && comment() === typed) setComment("")
-                            }),
-                          comment,
-                        )}
-                      />
+                        onClick={() =>
+                          void run("state", async () => {
+                            const typed = comment()
+                            const done = await props.actions.setItemState(current(), true, { comment: typed.trim() })
+                            if (done !== undefined && comment() === typed) setComment("")
+                          })
+                        }
+                      >
+                        {comment().trim() ? t("close.reopenWithComment") : t("action.reopen")}
+                      </ui.Button>
                     </Show>
-                    <div class="ghp-spacer" />
-                    <Show when={current().kind === "pr" && current().state === "OPEN"}>
-                      <ui.Menu
-                        label={t("review.submit")}
-                        trigger="button"
-                        icon="review"
-                        placement="top-end"
-                        disabled={!!busy()}
-                        items={[
+                  }>
+                    <ui.Menu
+                      label={comment().trim() ? t("close.withComment") : t(current().kind === "pr" ? "close.pr" : "close.issue")}
+                      trigger="button"
+                      icon="circle-x"
+                      placement="top-start"
+                      disabled={!!busy()}
+                      items={props.actions.closeMenu(
+                        current(),
+                        (work) =>
+                          void run("state", async () => {
+                            const typed = comment()
+                            const done = await work()
+                            if (done !== undefined && comment() === typed) setComment("")
+                          }),
+                        comment,
+                      )}
+                    />
+                  </Show>
+                  <div class="ghp-spacer" />
+                  <Show when={current().pr && current().state === "OPEN" ? current().pr : undefined}>
+                    {(pr) => (
+                      <ui.Button
+                        size="small"
+                        variant="neutral"
+                        icon="fork"
+                        busy={busy() === "merge"}
+                        disabled={current().draft || !!busy()}
+                        onClick={() =>
+                          void run("merge", () =>
+                            props.actions.mergePr(props.session.directory, { number: current().number, title: current().title, head: pr().head }, current().repo),
+                          )
+                        }
+                      >
+                        {t("action.mergePr")}
+                      </ui.Button>
+                    )}
+                  </Show>
+                  <Show when={current().kind === "pr" && current().state === "OPEN"}>
+                    <ui.Menu
+                      label={t("review.submit")}
+                      trigger="button"
+                      icon="review"
+                      placement="top-end"
+                      disabled={!!busy()}
+                      items={((): UiMenuEntry[] => {
+                        const verdicts = [
                           { label: t("review.approve"), icon: "circle-check", disabled: reviews.latest?.mine !== false, onSelect: () => void send(current(), "APPROVE") },
                           {
                             label: t("review.requestChanges"),
@@ -425,27 +434,29 @@ export function ItemView(props: { item: ItemRef; session: MountedSession; action
                             disabled: reviews.latest?.mine !== false || !comment().trim(),
                             onSelect: () => void send(current(), "REQUEST_CHANGES"),
                           },
-                          { label: t("review.comment"), icon: "comment", disabled: !comment().trim(), onSelect: () => void send(current(), "COMMENT") },
-                        ]}
-                      />
-                    </Show>
-                    <ui.Button
-                      size="small"
-                      variant="contrast"
-                      busy={busy() === "comment"}
-                      disabled={!comment().trim() || !!busy()}
-                      onClick={() => void send(current())}
-                    >
-                      {t("item.comment")}
-                    </ui.Button>
-                  </div>
-                  <Show when={current().kind === "pr" && reviews.latest?.mine}>
-                    <div class="ghp-faint ghp-hint">{t("review.ownPr")}</div>
+                        ] as const
+                        const plain = { label: t("review.comment"), icon: "comment", disabled: !comment().trim(), onSelect: () => void send(current(), "COMMENT") } as const
+                        // On their own pull request, why the verdicts are off sits with them rather than under the composer.
+                        return reviews.latest?.mine
+                          ? [{ type: "group", label: t("review.ownPr"), items: [...verdicts] }, { type: "separator" }, plain]
+                          : [...verdicts, plain]
+                      })()}
+                    />
                   </Show>
+                  <ui.Button
+                    size="small"
+                    variant="contrast"
+                    busy={busy() === "comment"}
+                    disabled={!comment().trim() || !!busy()}
+                    onClick={() => void send(current())}
+                  >
+                    {t("item.comment")}
+                  </ui.Button>
                 </div>
-              </Match>
-            </Switch>
-          </div>
+              </div>
+            </footer>
+          </Show>
+          </>
         )}
       </Show>
     </div>
