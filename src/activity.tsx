@@ -371,7 +371,7 @@ export function AgentBanner(props: { item: ItemRef; session: MountedSession; act
                 <b>{t("activity.proposes")}:</b> {describeAction(t, action)}
               </span>
               <ui.Button size="small" variant="ghost" onClick={() => void props.actions.agent.decide(props.session.id, [action.id], "skip")}>
-                {t("activity.discard")}
+                {t("activity.skip")}
               </ui.Button>
               <ui.Button size="small" variant="ghost" icon="edit" onClick={() => editAction(ctx, props.actions, action)}>
                 {t("activity.edit")}

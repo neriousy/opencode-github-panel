@@ -1121,6 +1121,10 @@ function ItemRow(props: {
           </Show>
         </span>
         <Show when={props.compact}>
+          {/* Who opened it, which compact rows otherwise drop: what a reviewer picks by. */}
+          <span class="ghp-pr-author ghp-ellipsis" title={props.item.author}>
+            {props.item.author}
+          </span>
           <span class="ghp-pr-time" title={whenFull()}>
             {short()}
           </span>

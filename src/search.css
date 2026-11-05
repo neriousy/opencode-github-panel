@@ -439,6 +439,18 @@
   text-align: right;
 }
 
+.ghp-pr-author {
+  max-width: 11ch;
+  color: var(--v2-text-text-faint);
+}
+
+/* A narrow panel keeps the title; the author is in the row's hover card and menu. */
+@container ghp (max-width: 520px) {
+  .ghp-pr-author {
+    display: none;
+  }
+}
+
 .ghp-list .ghp-row-actions {
   position: absolute;
   top: 50%;

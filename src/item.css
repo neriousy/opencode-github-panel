@@ -687,6 +687,11 @@
   flex: 1;
 }
 
+.ghp-inbox-reason {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
 .ghp-inbox-where {
   flex: 0 1 auto;
   max-width: 45%;

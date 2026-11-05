@@ -95,7 +95,10 @@ export function InboxView(props: { actions: Actions; onCount?: (count: number) =
           open={folds.flag("notifications", true)}
           onToggle={() => folds.setFlag("notifications", !folds.flag("notifications", true))}
         >
-          <For each={repos()} fallback={<div class="ghp-faint ghp-pad">{t("inbox.empty")}</div>}>
+          <Show when={repos().length === 1 ? repos()[0] : undefined}>
+            {(repo) => <For each={byRepo(repo())}>{(entry) => <InboxRow entry={entry} actions={props.actions} grouped />}</For>}
+          </Show>
+          <For each={repos().length === 1 ? [] : repos()} fallback={<Show when={repos().length === 0}><div class="ghp-faint ghp-pad">{t("inbox.empty")}</div></Show>}>
             {(repo) => (
               <Group
                 class="ghp-inbox-repo"
@@ -186,10 +189,14 @@ function InboxRow(props: { entry: InboxEntry; actions: Actions; grouped?: boolea
           .filter(Boolean)
           .join(" · ")}
       </span>
-      <span class="ghp-pill">{reason()}</span>
+      {/* Reasons that ask something of the user stand out; the rest (a state change, a comment) are context. */}
+      <span class={ASKS.has(props.entry.reason) ? "ghp-pill" : "ghp-faint ghp-inbox-reason"}>{reason()}</span>
       <div class="ghp-row-actions ghp-row-actions-visible" onClick={(event) => event.stopPropagation()}>
         <ui.Menu label={t("action.more")} trigger="icon" icon="outline-dots" placement="bottom-end" items={items()} />
       </div>
     </div>
   )
 }
+
+/** Notification reasons where someone wants the user: mentioned, assigned, asked to review or approve. */
+const ASKS = new Set(["mention", "team_mention", "review_requested", "assign", "approval_requested", "security_alert"])

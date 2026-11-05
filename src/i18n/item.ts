@@ -20,7 +20,7 @@ export const item = {
   "view.expandAll": "Expand all",
   "view.changedFiles": "Changed files",
   "view.viewed": "Viewed",
-  "view.viewedCount": "{{count}}/{{total}} viewed",
+  "view.viewedCount": "{{count}} of {{total}} files viewed",
   "view.checks.failure": "{{count}} failing",
   "view.checks.pending": "{{count}} running",
   "view.checks.success": "{{count}} passed",

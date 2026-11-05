@@ -1,5 +1,7 @@
 import { createComputed, createSignal, on, onCleanup } from "solid-js"
 import {
+  dehydrate,
+  hydrate,
   InfiniteQueryObserver,
   keepPreviousData,
   notifyManager,
@@ -50,7 +52,9 @@ export function createQueries(git: GitClient) {
   client.setQueryDefaults(["agent"], { networkMode: "always" })
   client.setQueryDefaults(["review"], { networkMode: "always" })
   client.mount()
+  const persisted = persist(client)
   onCleanup(() => {
+    persisted()
     client.unmount()
     client.clear()
   })
@@ -307,6 +311,66 @@ export function createQueries(git: GitClient) {
     /** Loads a query in the background, for example when the pointer rests on a row. */
     prefetch: (input: { queryKey: QueryKey; queryFn: () => Promise<unknown>; staleTime?: number }) =>
       void client.prefetchQuery(input as never),
+  }
+}
+
+// The GitHub lists the panel opens with, kept in this window's storage so an app start or a reload shows the last ones
+// at once while they refresh. Git state is left out: it reads in milliseconds, and an old one could mislead.
+const CACHE = "plugin.github-panel.cache.v1"
+const CACHE_LIMIT = 1_500_000
+const SAVE_EVERY = 5 * SECOND
+
+function persisted(key: QueryKey) {
+  if (key[0] === "pulls" || key[0] === "inbox") return true
+  return key[0] === "gh" && (key[2] === "search" || key[2] === "meta")
+}
+
+/** Restores the kept lists into `client` and keeps saving them; the returned function saves once more and stops. */
+function persist(client: QueryClient) {
+  const saved = readCache()
+  if (saved) hydrate(client, saved)
+  const state = { timer: undefined as ReturnType<typeof setTimeout> | undefined, last: "" }
+  const save = () => {
+    state.timer = undefined
+    const snapshot = dehydrate(client, { shouldDehydrateQuery: (query) => query.state.status === "success" && persisted(query.queryKey) })
+    // A search keeps only its first page: enough to show at once, and later pages load as the list scrolls.
+    const text = JSON.stringify({
+      ...snapshot,
+      queries: snapshot.queries.map((query) => {
+        // SAFETY: search queries hold InfiniteData; every other kept query is plain data.
+        const data = query.state.data as Partial<InfiniteData<unknown, unknown>> | undefined
+        return data?.pages && data.pageParams
+          ? { ...query, state: { ...query.state, data: { pages: data.pages.slice(0, 1), pageParams: data.pageParams.slice(0, 1) } } }
+          : query
+      }),
+    })
+    if (text === state.last || text.length > CACHE_LIMIT) return
+    state.last = text
+    // Storage can be full or unavailable; the cache is only a head start.
+    try {
+      localStorage.setItem(CACHE, text)
+    } catch {}
+  }
+  const stop = client.getQueryCache().subscribe((event) => {
+    if (event.type !== "updated" || event.action.type !== "success" || !persisted(event.query.queryKey) || state.timer) return
+    state.timer = setTimeout(save, SAVE_EVERY)
+  })
+  return () => {
+    stop()
+    if (state.timer) {
+      clearTimeout(state.timer)
+      save()
+    }
+  }
+}
+
+function readCache() {
+  try {
+    const text = localStorage.getItem(CACHE)
+    // SAFETY: only `persist` writes this key, with what `dehydrate` made.
+    return text ? (JSON.parse(text) as ReturnType<typeof dehydrate>) : undefined
+  } catch {
+    return undefined
   }
 }
 

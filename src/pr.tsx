@@ -577,7 +577,7 @@ export function PrChecks(props: { item: Item; actions: Actions; folds: Folds }) 
           onToggle={() => props.folds.setFlag("runs", !props.folds.flag("runs", true))}
         >
           <For each={current()} fallback={<div class="ghp-faint ghp-pad">{runs.latest ? t("checks.noRuns") : ""}</div>}>
-            {(run) => <RunRow run={run} repo={props.item.repo} actions={props.actions} />}
+            {(run) => <RunRow run={run} repo={props.item.repo} actions={props.actions} subject={props.item.title} />}
           </For>
         </Group>
       </Show>
@@ -585,7 +585,8 @@ export function PrChecks(props: { item: Item; actions: Actions; folds: Folds }) 
   )
 }
 
-export function RunRow(props: { run: Run; repo: string; actions: Actions; showBranch?: boolean }) {
+/** `subject`: the title the view already shows (its pull request's); a run titled the same leaves it out. */
+export function RunRow(props: { run: Run; repo: string; actions: Actions; showBranch?: boolean; subject?: string }) {
   const ctx = usePlugin()
   const ui = ctx.ui
   const t = ctx.t
@@ -630,7 +631,9 @@ export function RunRow(props: { run: Run; repo: string; actions: Actions; showBr
       <div class="ghp-pr-main">
         <div class="ghp-pr-title">
           <span class="ghp-ellipsis">{props.run.workflow}</span>
-          <span class="ghp-faint ghp-ellipsis">{props.run.title}</span>
+          <Show when={props.run.title !== props.subject}>
+            <span class="ghp-faint ghp-ellipsis">{props.run.title}</span>
+          </Show>
         </div>
         <div class="ghp-pr-sub">
           <span class="ghp-ellipsis">

@@ -19,6 +19,12 @@
   padding-right: 8px;
 }
 
+.ghp-activity-section .ghp-section-title {
+  font-size: 12px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
 .ghp-activity-section .ghp-section-title .ghp-tab-count {
   margin-inline-start: 2px;
   text-transform: none;

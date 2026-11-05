@@ -52,10 +52,17 @@ export function DiffList(props: {
     <div class="ghp-files">
       <div class="ghp-bar">
         <span class="ghp-faint ghp-ellipsis">
-          {ctx.plural("item.files", props.files.length)} · <span class="ghp-add">+{props.files.reduce((sum, file) => sum + file.additions, 0)}</span>{" "}
-          <span class="ghp-del">−{props.files.reduce((sum, file) => sum + file.deletions, 0)}</span>
-          <Show when={props.viewed}>
-            {(viewed) => ` · ${t("view.viewedCount", { count: props.files.filter((file) => viewed().has(file.path)).length, total: props.files.length })}`}
+          {/* A pull request's header already says its size; its files say how far the review got. */}
+          <Show
+            when={props.viewed}
+            fallback={
+              <>
+                {ctx.plural("item.files", props.files.length)} · <span class="ghp-add">+{props.files.reduce((sum, file) => sum + file.additions, 0)}</span>{" "}
+                <span class="ghp-del">−{props.files.reduce((sum, file) => sum + file.deletions, 0)}</span>
+              </>
+            }
+          >
+            {(viewed) => t("view.viewedCount", { count: props.files.filter((file) => viewed().has(file.path)).length, total: props.files.length })}
           </Show>
         </span>
         <div class="ghp-spacer" />

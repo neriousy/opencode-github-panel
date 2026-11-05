@@ -85,6 +85,15 @@
   padding: 20px 12px;
 }
 
+/* A clean working tree, with what is left to sync. */
+.ghp-clean-next {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
 /* Top bar: the repository, the tabs and repository-wide actions. Narrow, the tabs take their own row. */
 
 .ghp-topbar {

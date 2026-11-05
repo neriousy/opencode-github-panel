@@ -312,7 +312,7 @@ function TopBar(props: { state: State }) {
               class="ghp-bell ghp-activity-button"
               size="small"
               variant="ghost"
-              icon="checklist"
+              icon="brain"
               aria-label={t("page.activity")}
               aria-pressed={s.page() === "activity"}
               data-pressed={s.page() === "activity" ? "" : undefined}
@@ -888,41 +888,57 @@ function ChangesView(props: { state: State }) {
 
   return (
     <div class="ghp-changes">
-      <div class="ghp-commit-box">
-        <textarea
-          class="ghp-textarea"
-          rows={3}
-          aria-label={t("changes.message")}
-          placeholder={t("changes.placeholder")}
-          value={message()}
-          onInput={(event) => setMessage(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-              event.preventDefault()
-              if (ready()) void commit({})
-            }
-          }}
-        />
-        <div class="ghp-commit-actions">
-          <ui.Button
-            class="ghp-grow"
-            variant="contrast"
-            size="small"
-            icon="check"
-            busy={s.busy() === "commit"}
-            disabled={!ready()}
-            onClick={() => void commit({})}
-          >
-            {staged().length > 0 ? t("changes.commit") : t("changes.commitAll")}
-          </ui.Button>
-          <ui.Menu label={t("changes.commitOptions")} trigger="icon" icon="chevron-down" placement="bottom-end" items={commitItems()} />
+      <Show when={!nothing()}>
+        <div class="ghp-commit-box">
+          <textarea
+            class="ghp-textarea"
+            rows={3}
+            aria-label={t("changes.message")}
+            placeholder={t("changes.placeholder")}
+            value={message()}
+            onInput={(event) => setMessage(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                event.preventDefault()
+                if (ready()) void commit({})
+              }
+            }}
+          />
+          <div class="ghp-commit-actions">
+            <ui.Button
+              class="ghp-grow"
+              variant="contrast"
+              size="small"
+              icon="check"
+              busy={s.busy() === "commit"}
+              disabled={!ready()}
+              onClick={() => void commit({})}
+            >
+              {staged().length > 0 ? t("changes.commit") : t("changes.commitAll")}
+            </ui.Button>
+            <ui.Menu label={t("changes.commitOptions")} trigger="icon" icon="chevron-down" placement="bottom-end" items={commitItems()} />
+          </div>
         </div>
-      </div>
+      </Show>
 
       <Show when={nothing()}>
-        <div class="ghp-empty ghp-empty-inline">
+        <div class="ghp-empty ghp-empty-inline ghp-clean">
           <ui.Icon name="circle-check" />
           <span>{t("changes.clean")}</span>
+          <Show when={s.overview().upstream && (s.overview().behind > 0 || s.overview().ahead > 0)}>
+            <div class="ghp-clean-next">
+              <Show when={s.overview().behind > 0}>
+                <ui.Button size="small" variant="neutral" icon="download" busy={s.busy() === "pull"} disabled={!!s.busy()} onClick={() => void s.run("pull", () => s.actions.pull(s.cwd()))}>
+                  {ctx.plural("changes.pullCount", s.overview().behind)}
+                </ui.Button>
+              </Show>
+              <Show when={s.overview().ahead > 0}>
+                <ui.Button size="small" variant="neutral" icon="cloud-upload" busy={s.busy() === "push"} disabled={!!s.busy()} onClick={() => void s.run("push", () => s.actions.push(s.cwd()))}>
+                  {ctx.plural("changes.pushCount", s.overview().ahead)}
+                </ui.Button>
+              </Show>
+            </div>
+          </Show>
         </div>
       </Show>
 
